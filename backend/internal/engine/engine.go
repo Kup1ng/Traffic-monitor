@@ -189,13 +189,13 @@ func (e *Engine) onTick(now time.Time) {
 	}
 	resetDown := rx < e.lastRawRX || tx < e.lastRawTX
 	e.lastRawRX, e.lastRawTX = rx, tx
-	e.pendRX += dRX
-	e.pendTX += dTX
 
 	secs := e.poll.Seconds()
 	sample := Sample{TS: now.UnixMilli(), RXbps: float64(dRX) * 8 / secs, TXbps: float64(dTX) * 8 / secs}
 
 	e.mu.Lock()
+	e.pendRX += dRX
+	e.pendTX += dTX
 	e.rxTotal += dRX
 	e.txTotal += dTX
 	e.lastUpdateUnix = now.Unix()
@@ -222,8 +222,11 @@ func (e *Engine) onTick(now time.Time) {
 // advances the durable anchor, all in one transaction. On success it subtracts
 // exactly what was persisted from pending (never zeroes it).
 func (e *Engine) flush(now time.Time, hourK, fiveK int64) {
+	e.mu.Lock()
 	pr, pt := e.pendRX, e.pendTX
-	rawRX, rawTX := e.lastRawRX, e.lastRawTX
+	e.mu.Unlock()
+
+	rawRX, rawTX := e.lastRawRX, e.lastRawTX // run-goroutine only
 	bid := e.curBootID
 
 	if err := e.store.Flush(store.FlushArgs{
@@ -235,8 +238,13 @@ func (e *Engine) flush(now time.Time, hourK, fiveK int64) {
 		log.Printf("engine: flush failed (will retry, no data lost): %v", err)
 		return
 	}
+
+	// Subtract exactly what was persisted; bytes that arrived during the flush
+	// remain in pending and are flushed next time.
+	e.mu.Lock()
 	e.pendRX -= pr
 	e.pendTX -= pt
+	e.mu.Unlock()
 }
 
 // --- API-facing accessors (thread-safe) ---
@@ -254,6 +262,14 @@ func (e *Engine) CurrentSpeed() Sample {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.lastSample
+}
+
+// Pending returns the bytes accumulated since the last durable flush. Callers
+// add this to bucket sums so totals reflect up-to-the-second activity.
+func (e *Engine) Pending() (rx, tx uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.pendRX, e.pendTX
 }
 
 // RecentSamples returns the live ring buffer in chronological order.

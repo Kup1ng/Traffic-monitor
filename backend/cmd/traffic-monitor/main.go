@@ -3,8 +3,8 @@
 // Subcommands:
 //
 //	serve            run the monitor and web server (default)
-//	set-password     set the admin web-panel password (added with auth)
-//	reset-password   alias for set-password (added with auth)
+//	set-password     set the admin web-panel password
+//	reset-password   alias for set-password
 //	version          print the build version
 package main
 
@@ -14,6 +14,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,9 +24,11 @@ import (
 
 	_ "time/tzdata" // embed the IANA timezone database for TM_TZ on any host
 
+	"github.com/Kup1ng/Traffic-monitor/internal/api"
 	"github.com/Kup1ng/Traffic-monitor/internal/auth"
 	"github.com/Kup1ng/Traffic-monitor/internal/collector"
 	"github.com/Kup1ng/Traffic-monitor/internal/config"
+	"github.com/Kup1ng/Traffic-monitor/internal/engine"
 	"github.com/Kup1ng/Traffic-monitor/internal/store"
 )
 
@@ -32,6 +36,8 @@ import (
 var version = "dev"
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.LUTC)
+
 	sub := "serve"
 	args := os.Args[1:]
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -59,9 +65,6 @@ func main() {
 	}
 }
 
-// runServe currently runs an interim console meter that proves the collector
-// works end to end. It is replaced by the full HTTP server + storage engine in
-// a later step.
 func runServe(args []string) error {
 	cfg, err := config.Load(args)
 	if err != nil {
@@ -80,40 +83,61 @@ func runServe(args []string) error {
 		reader = collector.NewSysfsReader(iface)
 	}
 
-	info := collector.GetInterfaceInfo(reader.Iface())
-	fmt.Printf("traffic-monitor %s — monitoring %q (demo=%v)\n", version, reader.Iface(), cfg.Demo)
-	fmt.Printf("interface: state=%s mtu=%d speed=%dMbps mac=%s\n", info.OperState, info.MTU, info.SpeedMbps, info.MAC)
-	fmt.Printf("listen=%s db=%s poll=%s flush=%s\n", cfg.Listen, cfg.DBPath, cfg.PollInterval, cfg.FlushInterval)
-	fmt.Println("(interim console meter — press Ctrl+C to exit)")
+	st, err := store.Open(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer st.Close()
+
+	secret, err := st.GetOrCreateSessionSecret()
+	if err != nil {
+		return fmt.Errorf("session secret: %w", err)
+	}
+
+	eng, err := engine.New(cfg, reader, st)
+	if err != nil {
+		return err
+	}
+	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure)
+
+	srv, err := api.NewServer(cfg, eng, authn, version)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	lastRX, lastTX, err := reader.Read()
-	if err != nil {
-		return fmt.Errorf("read counters: %w", err)
-	}
-	ticker := time.NewTicker(cfg.PollInterval)
-	defer ticker.Stop()
+	// Run the accounting engine; it performs a final flush on ctx cancellation.
+	engDone := make(chan struct{})
+	go func() {
+		_ = eng.Run(ctx)
+		close(engDone)
+	}()
 
-	secs := cfg.PollInterval.Seconds()
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("\nshutting down")
-			return nil
-		case <-ticker.C:
-			rx, tx, err := reader.Read()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "read error: %v\n", err)
-				continue
-			}
-			dRX := collector.Delta(rx, lastRX)
-			dTX := collector.Delta(tx, lastTX)
-			lastRX, lastTX = rx, tx
-			fmt.Printf("\r↓ %-12s  ↑ %-12s", bitsPerSec(dRX, secs), bitsPerSec(dTX, secs))
-		}
+	httpSrv := &http.Server{
+		Addr:              cfg.Listen,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
+	go func() {
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutCtx)
+	}()
+
+	log.Printf("traffic-monitor %s listening on %s (interface %q, demo=%v)", version, cfg.Listen, eng.Iface(), cfg.Demo)
+	if !authn.PasswordConfigured() {
+		log.Printf("WARNING: no admin password set — run 'traffic-monitor set-password' (or reinstall) before exposing the panel")
+	}
+
+	err = httpSrv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		err = nil
+	}
+	<-engDone // wait for the engine's final flush
+	return err
 }
 
 // runSetPassword handles the set-password / reset-password subcommands. The
@@ -157,20 +181,6 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func bitsPerSec(bytes uint64, secs float64) string {
-	bps := float64(bytes) * 8 / secs
-	switch {
-	case bps >= 1e9:
-		return fmt.Sprintf("%.2f Gbps", bps/1e9)
-	case bps >= 1e6:
-		return fmt.Sprintf("%.2f Mbps", bps/1e6)
-	case bps >= 1e3:
-		return fmt.Sprintf("%.2f Kbps", bps/1e3)
-	default:
-		return fmt.Sprintf("%.0f bps", bps)
-	}
 }
 
 func usage() {
