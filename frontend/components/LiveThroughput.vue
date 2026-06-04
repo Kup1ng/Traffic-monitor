@@ -78,8 +78,6 @@ const chartData = computed(() => ({
 }))
 
 const chartOptions = computed(() => {
-  // Read the unit so the axis/tooltips re-render when it is toggled.
-  void useFormat().speedUnit.value
   return {
     responsive: true,
     maintainAspectRatio: false,

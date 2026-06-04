@@ -1,11 +1,6 @@
-export type SpeedUnit = 'bits' | 'bytes'
-
-// Decimal (SI, powers of 1000) byte formatting and bits/s speed formatting, per
-// the configured convention. Numbers are rendered with the .tnum class elsewhere
-// for tabular figures.
+// Decimal (SI, powers of 1000) byte formatting and bits/s speed formatting.
+// Numbers are rendered with the .tnum class elsewhere for tabular figures.
 export function useFormat() {
-  const speedUnit = useState<SpeedUnit>('speedUnit', () => 'bits')
-
   const toNum = (v: number | string): number => (typeof v === 'string' ? Number(v) : v)
 
   function scale(n: number, units: string[]): { value: string; unit: string } {
@@ -40,9 +35,6 @@ export function useFormat() {
   }
 
   function speedParts(bps: number): { value: string; unit: string } {
-    if (speedUnit.value === 'bytes') {
-      return scale(bps / 8, ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'])
-    }
     return scale(bps, ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'])
   }
 
@@ -69,5 +61,5 @@ export function useFormat() {
     return new Date(unix * 1000).toLocaleString()
   }
 
-  return { speedUnit, bytesParts, formatBytes, speedParts, formatSpeed, formatSince, formatDate }
+  return { bytesParts, formatBytes, speedParts, formatSpeed, formatSince, formatDate }
 }

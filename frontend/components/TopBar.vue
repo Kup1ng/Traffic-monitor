@@ -1,5 +1,5 @@
 <template>
-  <header class="sticky top-0 z-40 bg-[var(--bg)]/70 backdrop-blur">
+  <header class="top-0 z-40 bg-[var(--bg)]/70 backdrop-blur md:sticky">
     <div class="mx-auto max-w-7xl px-3 py-3 sm:px-6">
       <div class="clay-sm flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:px-5">
         <!-- Brand -->
@@ -40,17 +40,6 @@
             <span class="hidden sm:inline">{{ connected ? 'Live' : 'Offline' }}</span>
           </span>
 
-          <!-- Units toggle -->
-          <SelectButton
-            v-model="speedUnit"
-            :options="unitOptions"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            aria-label="Speed units"
-            size="small"
-          />
-
           <!-- Logout -->
           <Button
             icon="pi pi-sign-out"
@@ -69,13 +58,7 @@
 import type { InterfaceResp } from '~/composables/useApi'
 
 const props = defineProps<{ iface: InterfaceResp | null; connected: boolean }>()
-const { speedUnit } = useFormat()
 const { logout } = useAuth()
-
-const unitOptions = [
-  { label: 'bits/s', value: 'bits' },
-  { label: 'bytes/s', value: 'bytes' },
-]
 
 const stateDot = computed(() => {
   switch (props.iface?.operstate) {
