@@ -1,0 +1,89 @@
+/* Layer order: Tailwind base < PrimeVue < Tailwind utilities, so utilities can
+   override PrimeVue components while PrimeVue overrides the base reset. */
+@layer tailwind-base, primevue, tailwind-utilities;
+
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-utilities {
+  @tailwind components;
+  @tailwind utilities;
+}
+
+/* Dark-only design system tokens (OLED-friendly, high contrast). */
+:root {
+  --bg: #0b0f19;
+  --surface: #121826;
+  --surface-2: #1a2233;
+  --border: #283147;
+  --text: #e6eaf2;
+  --text-muted: #94a3b8;
+  --rx: #38bdf8; /* download / received  — sky */
+  --tx: #fb923c; /* upload / transmitted — amber */
+  --brand: #3b82f6;
+  --up: #22c55e;
+  --warn: #f59e0b;
+  --down: #ef4444;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
+    radial-gradient(1000px 500px at -10% 10%, rgba(56, 189, 248, 0.08), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: 'Fira Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular monospaced figures so numbers never shift width. */
+.tnum {
+  font-family: 'Fira Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+/* Slim, dark scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--surface-2);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Visible focus for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--rx);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

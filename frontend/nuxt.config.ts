@@ -1,0 +1,66 @@
+import Aura from '@primeuix/themes/aura'
+
+// Static, dark-only SPA. `nuxt generate` produces files under .output/public,
+// which are copied into the Go binary's embed directory (backend/web/public).
+export default defineNuxtConfig({
+  ssr: false,
+  compatibilityDate: '2025-01-01',
+  devtools: { enabled: false },
+
+  app: {
+    baseURL: '/',
+    head: {
+      title: 'Traffic Monitor',
+      htmlAttrs: { lang: 'en', class: 'dark' },
+      meta: [
+        { charset: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'color-scheme', content: 'dark' },
+        { name: 'description', content: 'Lightweight self-hosted network traffic monitor' },
+      ],
+      link: [{ rel: 'icon', type: 'image/svg+xml', href: 'favicon.svg' }],
+    },
+  },
+
+  modules: ['@primevue/nuxt-module', '@nuxtjs/tailwindcss'],
+
+  // Tailwind v3: our main.css declares the layer order and the @tailwind
+  // directives so PrimeVue's styles sit between Tailwind base and utilities.
+  tailwindcss: {
+    cssPath: '~/assets/css/main.css',
+    viewer: false,
+  },
+
+  css: [
+    '@fontsource/fira-sans/400.css',
+    '@fontsource/fira-sans/500.css',
+    '@fontsource/fira-sans/600.css',
+    '@fontsource/fira-sans/700.css',
+    '@fontsource/fira-mono/400.css',
+    '@fontsource/fira-mono/500.css',
+    '@fontsource/fira-mono/700.css',
+    'primeicons/primeicons.css',
+  ],
+
+  primevue: {
+    options: {
+      ripple: true,
+      theme: {
+        preset: Aura,
+        options: {
+          darkModeSelector: '.dark',
+          cssLayer: { name: 'primevue', order: 'tailwind-base, primevue, tailwind-utilities' },
+        },
+      },
+    },
+    components: { exclude: ['Editor'] }, // auto-import <Chart>, skip <Editor> (needs quill)
+  },
+
+  // During `nuxt dev`, forward /api to the Go backend so there is no CORS and
+  // the SSE stream works the same as in production.
+  nitro: {
+    devProxy: {
+      '/api': { target: 'http://127.0.0.1:8088', changeOrigin: true },
+    },
+  },
+})
