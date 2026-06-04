@@ -1,4 +1,4 @@
-import type { Sample } from './useApi'
+import { apiUrl, type Sample } from './useApi'
 
 const MAX_SAMPLES = 180
 
@@ -34,7 +34,7 @@ export function useLive() {
 
   function connect() {
     if (es || typeof EventSource === 'undefined') return
-    es = new EventSource('/api/live/stream')
+    es = new EventSource(apiUrl('/api/live/stream'))
     es.onopen = () => {
       connected.value = true
     }

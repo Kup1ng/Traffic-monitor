@@ -26,6 +26,7 @@ type Config struct {
 	SessionTTL    time.Duration  // session cookie lifetime
 	CookieSecure  string         // "auto" | "true" | "false"
 	Demo          bool           // use synthetic counters (UI development on any OS)
+	BasePath      string         // secret base path the whole app is served under; "/" = root
 }
 
 // Default returns the built-in defaults before env/flag overrides are applied.
@@ -40,6 +41,7 @@ func Default() *Config {
 		SessionTTL:    7 * 24 * time.Hour,
 		CookieSecure:  "auto",
 		Demo:          false,
+		BasePath:      "/",
 	}
 }
 
@@ -59,9 +61,12 @@ func Load(args []string) (*Config, error) {
 	fs.DurationVar(&c.SessionTTL, "session-ttl", c.SessionTTL, "session cookie lifetime")
 	fs.StringVar(&c.CookieSecure, "cookie-secure", c.CookieSecure, `Secure cookie flag: "auto", "true" or "false"`)
 	fs.BoolVar(&c.Demo, "demo", c.Demo, "use synthetic counters instead of real interface statistics")
+	fs.StringVar(&c.BasePath, "base-path", c.BasePath, "secret base path to serve the app under (default: root)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
+
+	c.BasePath = NormalizeBasePath(c.BasePath)
 
 	if err := c.resolveLocation(); err != nil {
 		return nil, err
@@ -108,6 +113,19 @@ func (c *Config) applyEnv() {
 			c.Demo = b
 		}
 	}
+	if v := os.Getenv("TM_BASE_PATH"); v != "" {
+		c.BasePath = v
+	}
+}
+
+// NormalizeBasePath returns a base path with exactly one leading and trailing
+// slash (e.g. "abc" or "/abc/" -> "/abc/"). Empty or "/" returns "/".
+func NormalizeBasePath(s string) string {
+	s = strings.Trim(strings.TrimSpace(s), "/")
+	if s == "" {
+		return "/"
+	}
+	return "/" + s + "/"
 }
 
 func (c *Config) resolveLocation() error {

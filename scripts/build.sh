@@ -15,6 +15,9 @@ clean_embed() {
 echo "==> Building frontend (nuxt generate)"
 cd "$ROOT/frontend"
 [ -d node_modules ] || npm install --no-audit --no-fund
+# Bake a base-path placeholder that the Go server rewrites at startup to the
+# secret base path chosen at install time.
+export TM_BUILD_BASE="/__TM_BASE__/"
 npm run generate
 
 echo "==> Staging embedded assets into backend/web/public"

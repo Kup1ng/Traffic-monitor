@@ -41,7 +41,7 @@ func (a *Authenticator) SetSession(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    a.sign(expiry.Unix()),
-		Path:     "/",
+		Path:     a.cookiePath,
 		HttpOnly: true,
 		Secure:   a.secureFor(r),
 		SameSite: http.SameSiteLaxMode,
@@ -55,7 +55,7 @@ func (a *Authenticator) ClearSession(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     a.cookiePath,
 		HttpOnly: true,
 		Secure:   a.secureFor(r),
 		SameSite: http.SameSiteLaxMode,

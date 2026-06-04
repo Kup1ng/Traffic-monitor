@@ -5,10 +5,11 @@
 # Place the built binary at /tmp/Traffic-monitor-amd64 and this script at
 # /root/install.sh, then run one of:
 #
-#   bash install.sh install          # interactive install
+#   bash install.sh install          # interactive install (random port + secret path)
 #   bash install.sh update           # replace binary only (keeps data + config)
 #   bash install.sh uninstall        # remove service (optionally delete data)
 #   bash install.sh reset-password   # set a new admin password
+#   bash install.sh set-web-path [P] # change/regenerate the secret web path
 #   bash install.sh                  # interactive menu
 #
 set -euo pipefail
@@ -24,11 +25,13 @@ CONFIG_DIR="/etc/traffic-monitor"
 ENV_FILE="${CONFIG_DIR}/traffic-monitor.env"
 UNIT_FILE="/etc/systemd/system/${SERVICE}.service"
 
-# Options that may be set via flags to skip the matching prompt.
+# Options that may be set via flags to skip the matching prompt/auto-pick.
 OPT_IFACE=""
-OPT_BIND="0.0.0.0"
+OPT_BIND=""
 OPT_PORT=""
 OPT_PASSWORD=""
+OPT_WEB_PATH=""
+POSITIONAL=()
 
 if [ -t 1 ]; then
   C_RESET=$'\e[0m'; C_INFO=$'\e[36m'; C_OK=$'\e[32m'; C_WARN=$'\e[33m'; C_ERR=$'\e[31m'; C_BOLD=$'\e[1m'
@@ -61,6 +64,69 @@ list_ifaces() {
   done
 }
 
+# --- config helpers ---------------------------------------------------------
+
+get_config_value() {
+  local key="$1"
+  [ -f "$ENV_FILE" ] || return 1
+  sed -n "s/^${key}=//p" "$ENV_FILE" | head -n1
+}
+
+set_config_value() {
+  local key="$1" val="$2"
+  [ -f "$ENV_FILE" ] || die "config not found: ${ENV_FILE}"
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
+  fi
+}
+
+# --- port / web-path helpers ------------------------------------------------
+
+port_in_use() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"
+  else
+    return 1 # cannot check; assume free
+  fi
+}
+
+pick_free_port() {
+  local p tries=0
+  while [ "$tries" -lt 200 ]; do
+    if command -v shuf >/dev/null 2>&1; then
+      p="$(shuf -i 10000-65535 -n 1)"
+    else
+      p=$(( (RANDOM * 32768 + RANDOM) % 55536 + 10000 ))
+    fi
+    if ! port_in_use "$p"; then
+      echo "$p"
+      return 0
+    fi
+    tries=$((tries + 1))
+  done
+  die "could not find a free port after many attempts"
+}
+
+gen_web_path() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 8
+  elif [ -r /dev/urandom ]; then
+    LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 14
+  else
+    printf 'p%s%s' "$(date +%s)" "$$"
+  fi
+}
+
+sanitize_web_path() {
+  # Keep a single URL-safe path segment.
+  printf '%s' "$1" | tr -cd 'A-Za-z0-9._~-'
+}
+
 prompt_password() {
   local p1 p2
   while :; do
@@ -71,6 +137,16 @@ prompt_password() {
     printf '%s' "$p1"
     return 0
   done
+}
+
+print_url() {
+  local listen path port ip seg=""
+  listen="$(get_config_value TM_LISTEN || echo '')"
+  path="$(get_config_value TM_BASE_PATH || echo '')"
+  port="${listen##*:}"
+  [ -n "$path" ] && seg="${path}/"
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  ok "Open: http://${ip:-<server-ip>}:${port}/${seg}"
 }
 
 write_unit() {
@@ -112,6 +188,12 @@ cmd_install() {
   require_root
   [ -f "$BIN_SRC" ] || die "binary not found at ${BIN_SRC} — copy the built ${BIN_NAME} there first"
 
+  # Reuse an existing install's port and secret path so reinstall is stable.
+  local ex_listen ex_path
+  ex_listen="$(get_config_value TM_LISTEN || echo '')"
+  ex_path="$(get_config_value TM_BASE_PATH || echo '')"
+
+  # Interface.
   local def; def="$(default_iface || true)"
   if [ -z "$OPT_IFACE" ]; then
     echo "Available interfaces:"
@@ -122,11 +204,36 @@ cmd_install() {
     OPT_IFACE="${OPT_IFACE:-${def:-eth0}}"
   fi
 
-  if [ -z "$OPT_PORT" ]; then
-    read -r -p "Listen port [8088]: " OPT_PORT || true
-    OPT_PORT="${OPT_PORT:-8088}"
+  # Bind address.
+  if [ -z "$OPT_BIND" ]; then
+    if [ -n "$ex_listen" ]; then OPT_BIND="${ex_listen%:*}"; else OPT_BIND="0.0.0.0"; fi
   fi
 
+  # Port: flag > existing (persistent) > random free 5-digit.
+  if [ -z "$OPT_PORT" ]; then
+    if [ -n "$ex_listen" ]; then
+      OPT_PORT="${ex_listen##*:}"
+      info "Reusing existing port ${OPT_PORT}"
+    else
+      OPT_PORT="$(pick_free_port)"
+      info "Selected random free port ${OPT_PORT}"
+    fi
+  fi
+
+  # Secret web path: flag > existing (persistent) > generated.
+  if [ -z "$OPT_WEB_PATH" ]; then
+    if [ -n "$ex_path" ]; then
+      OPT_WEB_PATH="$ex_path"
+      info "Reusing existing secret web path"
+    else
+      OPT_WEB_PATH="$(gen_web_path)"
+      info "Generated secret web path"
+    fi
+  fi
+  OPT_WEB_PATH="$(sanitize_web_path "$OPT_WEB_PATH")"
+  [ -n "$OPT_WEB_PATH" ] || die "secret web path must not be empty"
+
+  # Password.
   [ -n "$OPT_PASSWORD" ] || OPT_PASSWORD="$(prompt_password)"
 
   info "Creating service user '${SVC_USER}'"
@@ -146,6 +253,7 @@ cmd_install() {
 # Traffic Monitor configuration (loaded by systemd).
 TM_INTERFACE=${OPT_IFACE}
 TM_LISTEN=${OPT_BIND}:${OPT_PORT}
+TM_BASE_PATH=${OPT_WEB_PATH}
 TM_DB=${DB_PATH}
 # TM_TZ=
 # TM_POLL_INTERVAL=2s
@@ -167,10 +275,12 @@ EOF
   echo
   ok "Installed and started."
   systemctl --no-pager --full status "$SERVICE" 2>/dev/null | head -n 5 || true
-  local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   echo
-  ok "Open the panel at: http://${ip:-<server-ip>}:${OPT_PORT}"
-  warn "The panel has no TLS. Expose it only on a trusted/LAN/VPN network, or put it behind a reverse proxy with HTTPS."
+  ok "Random port:     ${OPT_PORT}"
+  ok "Secret web path: ${OPT_WEB_PATH}"
+  print_url
+  warn "The whole app lives ONLY under that secret path; the root URL returns 404."
+  warn "There is no TLS — expose it only on a trusted/LAN/VPN network, or behind an HTTPS reverse proxy."
 }
 
 cmd_update() {
@@ -180,14 +290,15 @@ cmd_update() {
 
   info "Stopping service"
   systemctl stop "$SERVICE" 2>/dev/null || true
-  info "Replacing binary (database and config are left untouched)"
+  info "Replacing binary (database, port, and secret path are left untouched)"
   install -m 0755 "$BIN_SRC" "$BIN_DST"
   info "Starting service"
   systemctl start "$SERVICE"
 
   echo
-  ok "Updated. All history and settings were preserved."
+  ok "Updated. All history and settings (including port and secret path) were preserved."
   systemctl --no-pager --full status "$SERVICE" 2>/dev/null | head -n 5 || true
+  print_url
 }
 
 cmd_uninstall() {
@@ -206,7 +317,7 @@ cmd_uninstall() {
     userdel "$SVC_USER" 2>/dev/null || true
     ok "Database, config, and service user removed."
   else
-    info "Kept ${DATA_DIR} and ${CONFIG_DIR} — history and settings are preserved."
+    info "Kept ${DATA_DIR} and ${CONFIG_DIR} — history, port, and secret path are preserved."
   fi
 }
 
@@ -219,21 +330,39 @@ cmd_reset_password() {
   ok "Admin password updated."
 }
 
+cmd_set_web_path() {
+  require_root
+  [ -f "$ENV_FILE" ] || die "not installed (config not found at ${ENV_FILE})"
+  local newpath="${OPT_WEB_PATH:-${POSITIONAL[0]:-}}"
+  if [ -z "$newpath" ]; then
+    newpath="$(gen_web_path)"
+  fi
+  newpath="$(sanitize_web_path "$newpath")"
+  [ -n "$newpath" ] || die "web path must not be empty"
+  set_config_value TM_BASE_PATH "$newpath"
+  systemctl restart "$SERVICE" 2>/dev/null || true
+  ok "Secret web path updated to: ${newpath}"
+  warn "Existing sessions are invalidated; log in again at the new path."
+  print_url
+}
+
 menu() {
   echo "${C_BOLD}Traffic Monitor — installer${C_RESET}"
   echo "  1) Install"
   echo "  2) Update binary (keeps data + config)"
   echo "  3) Uninstall"
   echo "  4) Reset admin password"
-  echo "  5) Exit"
+  echo "  5) Change/regenerate secret web path"
+  echo "  6) Exit"
   local choice
-  read -r -p "Choose [1-5]: " choice || true
+  read -r -p "Choose [1-6]: " choice || true
   case "${choice:-}" in
     1) cmd_install ;;
     2) cmd_update ;;
     3) cmd_uninstall ;;
     4) cmd_reset_password ;;
-    5) exit 0 ;;
+    5) cmd_set_web_path ;;
+    6) exit 0 ;;
     *) die "invalid choice" ;;
   esac
 }
@@ -245,17 +374,24 @@ Traffic Monitor installer
 Usage: install.sh <command> [options]
 
 Commands:
-  install            Install the service (interactive; options below skip prompts)
-  update             Replace the binary from ${BIN_SRC} and restart (keeps data/config)
+  install            Install the service (auto-picks a random free 5-digit port
+                     and a secret web path; interface and password are prompted)
+  update             Replace the binary from ${BIN_SRC} and restart
+                     (keeps the database, port, and secret path)
   uninstall          Stop and remove the service (optionally delete data/config)
   reset-password     Set a new admin web-panel password
+  set-web-path [P]   Change the secret web path to P (or regenerate if omitted)
   (no command)       Show an interactive menu
 
-Install options:
+Install options (skip the matching prompt/auto-pick):
   --interface NAME   Interface to monitor (default: the default-route interface)
   --bind ADDR        Listen address (default: 0.0.0.0)
-  --port N           Listen port (default: 8088)
+  --port N           Listen port (default: a random free 5-digit port)
+  --web-path PATH    Secret base path (default: randomly generated)
   --password PASS    Admin password (prefer the interactive prompt on shared shells)
+
+The whole app (UI, API, login, SSE) is served only under the secret web path:
+  http://<server-ip>:<port>/<web-path>/   — the root URL returns 404.
 
 The built binary must be present at ${BIN_SRC} before install/update.
 EOF
@@ -269,9 +405,11 @@ main() {
       --interface) OPT_IFACE="${2:-}"; shift 2 ;;
       --bind)      OPT_BIND="${2:-}"; shift 2 ;;
       --port)      OPT_PORT="${2:-}"; shift 2 ;;
+      --web-path)  OPT_WEB_PATH="${2:-}"; shift 2 ;;
       --password)  OPT_PASSWORD="${2:-}"; shift 2 ;;
       -h|--help)   usage; exit 0 ;;
-      *) die "unknown option: $1" ;;
+      --*)         die "unknown option: $1" ;;
+      *)           POSITIONAL+=("$1"); shift ;;
     esac
   done
 
@@ -280,9 +418,10 @@ main() {
     update)         cmd_update ;;
     uninstall)      cmd_uninstall ;;
     reset-password) cmd_reset_password ;;
+    set-web-path)   cmd_set_web_path ;;
     ""|menu)        menu ;;
     -h|--help|help) usage ;;
-    *) die "unknown command: ${sub} (use install | update | uninstall | reset-password)" ;;
+    *) die "unknown command: ${sub} (use install | update | uninstall | reset-password | set-web-path)" ;;
   esac
 }
 

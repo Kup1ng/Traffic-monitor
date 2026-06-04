@@ -24,16 +24,22 @@ type Authenticator struct {
 	secret       []byte
 	ttl          time.Duration
 	cookieSecure string // "auto" | "true" | "false"
+	cookiePath   string // session cookie Path (the app base path)
 	limiter      *rateLimiter
 }
 
-// New creates an Authenticator. secret is the persisted HMAC session secret.
-func New(st *store.Store, secret []byte, ttl time.Duration, cookieSecure string) *Authenticator {
+// New creates an Authenticator. secret is the persisted HMAC session secret;
+// basePath scopes the session cookie to the app's base path.
+func New(st *store.Store, secret []byte, ttl time.Duration, cookieSecure, basePath string) *Authenticator {
+	if basePath == "" {
+		basePath = "/"
+	}
 	return &Authenticator{
 		store:        st,
 		secret:       secret,
 		ttl:          ttl,
 		cookieSecure: cookieSecure,
+		cookiePath:   basePath,
 		limiter:      newRateLimiter(5, 5*time.Minute, time.Minute),
 	}
 }

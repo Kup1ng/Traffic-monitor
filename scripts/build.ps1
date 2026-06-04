@@ -20,8 +20,10 @@ Write-Host '==> Building frontend (nuxt generate)'
 Push-Location (Join-Path $root 'frontend')
 try {
   if (-not (Test-Path 'node_modules')) { npm install --no-audit --no-fund }
+  # Bake a base-path placeholder the Go server rewrites at startup.
+  $env:TM_BUILD_BASE = '/__TM_BASE__/'
   npm run generate
-} finally { Pop-Location }
+} finally { Pop-Location; Remove-Item env:TM_BUILD_BASE -ErrorAction SilentlyContinue }
 if (-not (Test-Path (Join-Path $root 'frontend\.output\public\_nuxt'))) {
   throw 'frontend build failed: .output/public/_nuxt not found'
 }

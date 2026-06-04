@@ -98,7 +98,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure)
+	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure, cfg.BasePath)
 
 	srv, err := api.NewServer(cfg, eng, authn, version)
 	if err != nil {
@@ -127,7 +127,7 @@ func runServe(args []string) error {
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
 
-	log.Printf("traffic-monitor %s listening on %s (interface %q, demo=%v)", version, cfg.Listen, eng.Iface(), cfg.Demo)
+	log.Printf("traffic-monitor %s listening on %s%s (interface %q, demo=%v)", version, cfg.Listen, cfg.BasePath, eng.Iface(), cfg.Demo)
 	if !authn.PasswordConfigured() {
 		log.Printf("WARNING: no admin password set — run 'traffic-monitor set-password' (or reinstall) before exposing the panel")
 	}

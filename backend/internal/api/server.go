@@ -1,10 +1,9 @@
 // Package api wires the engine, store, and authenticator behind a stdlib HTTP
-// server: a JSON/SSE REST API under /api and the embedded SPA on every other
-// path.
+// server. The entire app (JSON API, SSE, and the embedded SPA) is served under a
+// configurable secret base path; anything outside that path returns 404.
 package api
 
 import (
-	"io/fs"
 	"log"
 	"net/http"
 	"path"
@@ -22,75 +21,75 @@ type Server struct {
 	eng     *engine.Engine
 	auth    *auth.Authenticator
 	version string
-	static  http.Handler
+	files   map[string]web.File
 }
 
-// NewServer constructs the API server and prepares the embedded static handler.
+// NewServer constructs the API server and prepares the embedded static files
+// (with the base-path placeholder rewritten to the configured base path).
 func NewServer(cfg *config.Config, eng *engine.Engine, a *auth.Authenticator, version string) (*Server, error) {
-	sub, err := web.FS()
+	files, err := web.BuildFS(cfg.BasePath)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, eng: eng, auth: a, version: version}
-	s.static = s.makeStatic(sub)
-	return s, nil
+	return &Server{cfg: cfg, eng: eng, auth: a, version: version, files: files}, nil
 }
 
-// Handler builds the routed, middleware-wrapped HTTP handler.
+// Handler builds the routed, middleware-wrapped HTTP handler. Every route lives
+// under cfg.BasePath; unmatched paths (including "/") fall through to a 404.
 func (s *Server) Handler() http.Handler {
+	base := s.cfg.BasePath
 	mux := http.NewServeMux()
 
 	// Public endpoints.
-	mux.HandleFunc("POST /api/login", s.handleLogin)
-	mux.HandleFunc("POST /api/logout", s.handleLogout)
-	mux.HandleFunc("GET /api/session", s.handleSession)
-	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("POST "+base+"api/login", s.handleLogin)
+	mux.HandleFunc("POST "+base+"api/logout", s.handleLogout)
+	mux.HandleFunc("GET "+base+"api/session", s.handleSession)
+	mux.HandleFunc("GET "+base+"api/version", s.handleVersion)
 
-	// Protected endpoints (any other /api/* path requires a valid session).
+	// Protected endpoints (any other base+api/* path requires a valid session).
 	protected := http.NewServeMux()
-	protected.HandleFunc("GET /api/totals", s.handleTotals)
-	protected.HandleFunc("GET /api/live", s.handleLive)
-	protected.HandleFunc("GET /api/live/recent", s.handleRecent)
-	protected.HandleFunc("GET /api/live/stream", s.handleStream)
-	protected.HandleFunc("GET /api/history", s.handleHistory)
-	protected.HandleFunc("GET /api/interface", s.handleInterface)
-	protected.HandleFunc("GET /api/summary", s.handleSummary)
-	mux.Handle("/api/", s.auth.RequireAuth(protected))
+	protected.HandleFunc("GET "+base+"api/totals", s.handleTotals)
+	protected.HandleFunc("GET "+base+"api/live", s.handleLive)
+	protected.HandleFunc("GET "+base+"api/live/recent", s.handleRecent)
+	protected.HandleFunc("GET "+base+"api/live/stream", s.handleStream)
+	protected.HandleFunc("GET "+base+"api/history", s.handleHistory)
+	protected.HandleFunc("GET "+base+"api/interface", s.handleInterface)
+	protected.HandleFunc("GET "+base+"api/summary", s.handleSummary)
+	mux.Handle(base+"api/", s.auth.RequireAuth(protected))
 
-	// Everything else: the embedded SPA.
-	mux.Handle("/", s.static)
+	// The embedded SPA on every other path under the base.
+	mux.Handle(base, http.HandlerFunc(s.serveStatic))
 
 	return recoverMW(mux)
 }
 
-// makeStatic serves embedded files, falling back to index.html for unknown
-// non-/api routes (client-side routing). Hashed assets under /_nuxt/ are served
-// with a long immutable cache.
-func (s *Server) makeStatic(sub fs.FS) http.Handler {
-	fileServer := http.FileServerFS(sub)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		if name == "" || name == "." {
-			name = "index.html"
+// serveStatic serves embedded files relative to the base path, falling back to
+// index.html for unknown non-asset routes (client-side routing).
+func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
+	rel := strings.TrimPrefix(r.URL.Path, s.cfg.BasePath)
+	rel = strings.TrimPrefix(path.Clean("/"+rel), "/")
+	if rel == "" || rel == "." {
+		rel = "index.html"
+	}
+
+	if f, ok := s.files[rel]; ok {
+		if strings.HasPrefix(rel, "_nuxt/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
-		if f, err := sub.Open(name); err == nil {
-			info, statErr := f.Stat()
-			f.Close()
-			if statErr == nil && !info.IsDir() {
-				if strings.HasPrefix(r.URL.Path, "/_nuxt/") {
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-				}
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-		}
-		// SPA fallback to index.html.
-		w.Header().Set("Cache-Control", "no-cache")
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/"
-		r2.URL.RawPath = ""
-		fileServer.ServeHTTP(w, r2)
-	})
+		w.Header().Set("Content-Type", f.ContentType)
+		_, _ = w.Write(f.Data)
+		return
+	}
+
+	// SPA fallback to index.html.
+	idx, ok := s.files["index.html"]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Type", idx.ContentType)
+	_, _ = w.Write(idx.Data)
 }
 
 // recoverMW turns a handler panic into a 500 instead of crashing the server.

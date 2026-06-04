@@ -15,7 +15,7 @@ func newTestAuth(t *testing.T) (*Authenticator, *store.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return New(st, []byte("test-secret-32-bytes-long-padding!!"), time.Hour, "auto"), st
+	return New(st, []byte("test-secret-32-bytes-long-padding!!"), time.Hour, "auto", "/"), st
 }
 
 func TestPasswordHashAndCheck(t *testing.T) {
@@ -61,7 +61,7 @@ func TestCookieSignVerify(t *testing.T) {
 		t.Fatal("tampered token must not verify")
 	}
 	// Wrong secret.
-	other := New(nil, []byte("a-totally-different-secret-key-123456"), time.Hour, "auto")
+	other := New(nil, []byte("a-totally-different-secret-key-123456"), time.Hour, "auto", "/")
 	if other.verify(tok, now) {
 		t.Fatal("token must not verify under a different secret")
 	}

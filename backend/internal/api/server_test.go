@@ -28,12 +28,12 @@ func newTestHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	secret, _ := st.GetOrCreateSessionSecret()
-	cfg := &config.Config{PollInterval: 2 * time.Second, FlushInterval: time.Minute, Location: time.UTC, Demo: true}
+	cfg := &config.Config{PollInterval: 2 * time.Second, FlushInterval: time.Minute, Location: time.UTC, Demo: true, BasePath: "/"}
 	eng, err := engine.New(cfg, collector.NewFakeReader("eth0", "boot-1"), st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := auth.New(st, secret, time.Hour, "false")
+	a := auth.New(st, secret, time.Hour, "false", "/")
 	srv, err := NewServer(cfg, eng, a, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -94,5 +94,89 @@ func TestSPARootServesIndex(t *testing.T) {
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "Traffic Monitor") {
 		t.Fatalf("root = %d body=%q", resp.StatusCode, string(b))
+	}
+}
+
+func TestSecretBasePath(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := auth.SetPassword(st, "pw"); err != nil {
+		t.Fatal(err)
+	}
+	secret, _ := st.GetOrCreateSessionSecret()
+	base := "/s3cretpath/"
+	cfg := &config.Config{PollInterval: 2 * time.Second, FlushInterval: time.Minute, Location: time.UTC, Demo: true, BasePath: base}
+	eng, err := engine.New(cfg, collector.NewFakeReader("eth0", "boot-1"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := auth.New(st, secret, time.Hour, "false", base)
+	srv, err := NewServer(cfg, eng, a, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Jar:           jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	get := func(p string) int {
+		resp, err := client.Get(ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Nothing is reachable outside the base path.
+	if c := get("/"); c != http.StatusNotFound {
+		t.Fatalf("GET / = %d, want 404", c)
+	}
+	if c := get("/api/totals"); c != http.StatusNotFound {
+		t.Fatalf("GET /api/totals = %d, want 404", c)
+	}
+	if c := get("/wrongpath/"); c != http.StatusNotFound {
+		t.Fatalf("GET /wrongpath/ = %d, want 404", c)
+	}
+
+	// The app lives under the base path.
+	if c := get(base); c != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", base, c)
+	}
+	if c := get(base + "api/totals"); c != http.StatusUnauthorized {
+		t.Fatalf("GET %sapi/totals (no auth) = %d, want 401", base, c)
+	}
+
+	// Login under the base sets a cookie scoped to the base path.
+	resp, err := client.Post(ts.URL+base+"api/login", "application/json", strings.NewReader(`{"password":"pw"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login = %d, want 200", resp.StatusCode)
+	}
+	var found bool
+	for _, c := range resp.Cookies() {
+		if c.Name == auth.CookieName {
+			found = true
+			if c.Path != base {
+				t.Fatalf("cookie Path = %q, want %q", c.Path, base)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no session cookie set on login")
+	}
+
+	if c := get(base + "api/totals"); c != http.StatusOK {
+		t.Fatalf("GET %sapi/totals (authed) = %d, want 200", base, c)
 	}
 }

@@ -113,15 +113,20 @@ On the Ubuntu server, place the two files:
 (both are attached to every GitHub Release), then:
 
 ```bash
-# Install (prompts for interface, port, and admin password)
+# Install: auto-picks a random free 5-digit port and a secret web path;
+# prompts for the interface and admin password.
 bash /root/install.sh install
 
 # Update to a new binary — replace /tmp/Traffic-monitor-amd64 first.
-# Keeps the database and config; only swaps the binary and restarts.
+# Keeps the database, port, and secret path; only swaps the binary and restarts.
 bash /root/install.sh update
 
 # Change the admin password
 bash /root/install.sh reset-password
+
+# Change or regenerate the secret web path
+bash /root/install.sh set-web-path             # regenerate a random one
+bash /root/install.sh set-web-path my-secret   # set it explicitly
 
 # Remove the service (asks whether to also delete the database/config)
 bash /root/install.sh uninstall
@@ -132,13 +137,19 @@ bash /root/install.sh
 
 `install` creates a dedicated `traffic-monitor` system user, the data directory
 `/var/lib/traffic-monitor`, the config `/etc/traffic-monitor/traffic-monitor.env`, and a
-hardened systemd service that auto-starts on boot and restarts on failure. Then open
-`http://<server-ip>:8088`.
+hardened systemd service that auto-starts on boot and restarts on failure. It also picks a
+**random free 5-digit port** and a **random secret web path**, then prints the full URL to
+open — e.g. `http://<server-ip>:53124/8f3a9c1d2e5b7a04/`.
 
-Non-interactive install is also supported:
+The **entire app (UI, API, login, SSE) is served only under that secret path**; the root URL
+and any wrong path return **404** (the app's existence isn't revealed). The port and secret
+path are persistent — `update` and a repeat `install` keep them.
+
+Non-interactive install / overrides:
 
 ```bash
-bash /root/install.sh install --interface eth0 --port 8088 --password 'your-password'
+bash /root/install.sh install \
+  --interface eth0 --port 53124 --web-path my-secret --password 'your-password'
 ```
 
 ## Configuration
@@ -148,7 +159,8 @@ The service reads environment variables (written by `install.sh` into the system
 
 | Variable | Flag | Default | Meaning |
 |----------|------|---------|---------|
-| `TM_LISTEN` | `-listen` | `0.0.0.0:8088` | listen address `host:port` |
+| `TM_LISTEN` | `-listen` | `0.0.0.0:8088` | listen address `host:port` (installer uses a random 5-digit port) |
+| `TM_BASE_PATH` | `-base-path` | `/` (root) | secret base path the whole app is served under |
 | `TM_INTERFACE` | `-iface` | auto (default route) | interface to monitor |
 | `TM_DB` | `-db` | `/var/lib/traffic-monitor/traffic.db` | SQLite database path |
 | `TM_TZ` | `-tz` | system local | timezone for day/month aggregation |
@@ -160,9 +172,10 @@ The service reads environment variables (written by `install.sh` into the system
 
 ## API reference
 
-All endpoints are under `/api`. Everything except `login`, `logout`, `session`, and `version`
-requires a valid session cookie. Byte counts are returned as decimal **strings** (BigInt-safe);
-speeds are numbers in **bits/second**.
+All endpoints are served under the configured secret base path (shown below as `/api/...` for
+the root case). Everything except `login`, `logout`, `session`, and `version` requires a valid
+session cookie. Byte counts are returned as decimal **strings** (BigInt-safe); speeds are
+numbers in **bits/second**.
 
 | Method & path | Description |
 |---------------|-------------|
@@ -180,11 +193,16 @@ speeds are numbers in **bits/second**.
 
 ## Security notes
 
+- **Random port + secret web path.** The installer listens on a random 5-digit port and serves
+  the whole app under a random secret path. Nothing is reachable at the root — `/` and any
+  wrong path return 404, so a scanner can't tell the app exists without the exact path. This is
+  obscurity, not a replacement for the password; keep both.
 - The panel serves plain HTTP. Expose it only on a trusted LAN/VPN, or place it behind a
   reverse proxy that terminates TLS. Set `TM_COOKIE_SECURE=true` (or rely on `auto`, which
-  enables it when the request arrives over HTTPS) when behind TLS.
-- The default port 8088 needs no privileges; the systemd unit only grants
-  `CAP_NET_BIND_SERVICE` if you choose a port below 1024.
+  enables it when the request arrives over HTTPS) when behind TLS. The session cookie is scoped
+  to the secret base path.
+- 5-digit ports need no privileges; the systemd unit only grants `CAP_NET_BIND_SERVICE` if you
+  override to a port below 1024.
 - The admin password is stored as a bcrypt hash in the SQLite database; the session secret is
   generated on first run and persisted, so sessions survive restarts.
 

@@ -51,11 +51,22 @@ export interface Sample {
   tx_bps: number
 }
 
-// Thin wrapper over $fetch. All requests are same-origin and send the session
-// cookie. In dev, Nuxt's devProxy forwards /api to the Go backend.
+// Base path the app is served under. Vite bakes import.meta.env.BASE_URL at
+// build time (a placeholder in production); the Go server rewrites it to the
+// secret base path at startup. Every API/SSE URL is built relative to it.
+const APP_BASE = (import.meta.env.BASE_URL || '/')
+
+export function apiUrl(p: string): string {
+  const base = APP_BASE.endsWith('/') ? APP_BASE : APP_BASE + '/'
+  return base + p.replace(/^\/+/, '')
+}
+
+// Thin wrapper over $fetch. All requests are same-origin (under the base path)
+// and send the session cookie. In dev, Nuxt's devProxy forwards /api to the Go
+// backend.
 export function useApi() {
   function request<T>(path: string, opts: Record<string, unknown> = {}): Promise<T> {
-    return $fetch<T>(path, { credentials: 'include', ...opts })
+    return $fetch<T>(apiUrl(path), { credentials: 'include', ...opts })
   }
 
   return {

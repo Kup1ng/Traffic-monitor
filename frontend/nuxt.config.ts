@@ -21,15 +21,22 @@ const TrafficPreset = definePreset(Aura, {
   },
 })
 
-// Static, dark-only SPA. `nuxt generate` produces files under .output/public,
-// which are copied into the Go binary's embed directory (backend/web/public).
+// Static SPA. `nuxt generate` produces files under .output/public, which are
+// copied into the Go binary's embed directory (backend/web/public).
+//
+// The base URL is baked at build time from TM_BUILD_BASE. Production builds set
+// it to a placeholder ("/__TM_BASE__/") that the Go server rewrites at startup
+// to the secret base path chosen at install time, so one binary can be served
+// under any path without rebuilding. Dev/default is root ("/").
+const BUILD_BASE = process.env.TM_BUILD_BASE || '/'
+
 export default defineNuxtConfig({
   ssr: false,
   compatibilityDate: '2025-01-01',
   devtools: { enabled: false },
 
   app: {
-    baseURL: '/',
+    baseURL: BUILD_BASE,
     head: {
       title: 'Traffic Monitor',
       htmlAttrs: { lang: 'en' },
