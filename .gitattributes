@@ -1,0 +1,28 @@
+# Normalize all text files to LF in the repository (this project targets Linux).
+* text=auto eol=lf
+
+# Explicit LF for files that must never get CRLF.
+*.sh   text eol=lf
+*.go   text eol=lf
+*.mod  text eol=lf
+*.sum  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.ts   text eol=lf
+*.js   text eol=lf
+*.vue  text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.sql  text eol=lf
+
+# Binary assets — never touch.
+*.woff2 binary
+*.woff  binary
+*.ttf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
