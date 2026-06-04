@@ -18,12 +18,6 @@
         </div>
 
         <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
-          <!-- Interface -->
-          <div class="clay-inset flex items-center gap-2 px-3 py-1.5">
-            <span class="h-2 w-2 rounded-full" :class="stateDot" :title="iface?.operstate || 'unknown'" />
-            <span class="tnum text-sm text-ink">{{ iface?.name || '—' }}</span>
-          </div>
-
           <!-- Live link status -->
           <span
             class="inline-flex items-center gap-1.5 text-xs font-medium"
@@ -57,19 +51,8 @@
 <script setup lang="ts">
 import type { InterfaceResp } from '~/composables/useApi'
 
-const props = defineProps<{ iface: InterfaceResp | null; connected: boolean }>()
+defineProps<{ iface: InterfaceResp | null; connected: boolean }>()
 const { logout } = useAuth()
-
-const stateDot = computed(() => {
-  switch (props.iface?.operstate) {
-    case 'up':
-      return 'bg-up'
-    case 'down':
-      return 'bg-down'
-    default:
-      return 'bg-muted'
-  }
-})
 
 async function onLogout() {
   await logout()
