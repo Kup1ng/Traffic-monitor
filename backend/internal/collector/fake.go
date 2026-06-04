@@ -54,3 +54,11 @@ func (f *FakeReader) Reboot(newBootID string) {
 	f.rx, f.tx = 0, 0
 	f.bootID = newBootID
 }
+
+// SetBootID changes the boot_id token WITHOUT touching the counters (e.g. to
+// simulate boot_id becoming readable mid-run without an actual reboot).
+func (f *FakeReader) SetBootID(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bootID = id
+}

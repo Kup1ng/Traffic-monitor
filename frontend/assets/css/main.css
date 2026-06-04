@@ -66,6 +66,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Scale the whole panel down ~10% on tablet/desktop so it's comfortable at 100%
+   browser zoom (the old design felt right around 90% zoom). All Tailwind sizing
+   is rem-based, so this shrinks type, spacing, and charts together. Mobile keeps
+   full size for readability. */
+@media (min-width: 768px) {
+  html {
+    font-size: 90%;
+  }
+  :root {
+    --radius: 24px;
+    --radius-sm: 16px;
+  }
+}
+
 /* Tabular monospaced figures so numbers never shift width. */
 .tnum {
   font-family: 'Fira Mono', ui-monospace, SFMono-Regular, monospace;

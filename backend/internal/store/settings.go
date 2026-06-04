@@ -55,3 +55,13 @@ func (s *Store) GetOrCreateSessionSecret() ([]byte, error) {
 	}
 	return secret, nil
 }
+
+// RotateSessionSecret replaces the persisted session secret with a fresh one,
+// immediately invalidating all existing session cookies.
+func (s *Store) RotateSessionSecret() error {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return err
+	}
+	return s.SetSetting(keySessionSecret, hex.EncodeToString(secret))
+}

@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,6 +53,10 @@ func main() {
 		}
 	case "set-password", "reset-password":
 		if err := runSetPassword(args); err != nil {
+			fail(err)
+		}
+	case "rotate-secret":
+		if err := runRotateSecret(args); err != nil {
 			fail(err)
 		}
 	case "version", "--version", "-v":
@@ -98,7 +103,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure, cfg.BasePath)
+	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure, cfg.BasePath, cfg.TrustProxy)
 
 	srv, err := api.NewServer(cfg, eng, authn, version)
 	if err != nil {
@@ -119,6 +124,9 @@ func runServe(args []string) error {
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Tie request contexts to the signal context so long-lived handlers
+		// (e.g. the SSE stream) are cancelled promptly on shutdown.
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	go func() {
 		<-ctx.Done()
@@ -136,6 +144,10 @@ func runServe(args []string) error {
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil
 	}
+	// On a bind failure, cancel ctx so the engine flushes and exits instead of
+	// blocking forever on <-engDone; the process then exits non-zero so systemd's
+	// Restart=on-failure can act.
+	stop()
 	<-engDone // wait for the engine's final flush
 	return err
 }
@@ -176,6 +188,26 @@ func runSetPassword(args []string) error {
 	return nil
 }
 
+// runRotateSecret rotates the HMAC session secret, immediately invalidating all
+// existing session cookies. Used by install.sh when the secret web path changes.
+func runRotateSecret(args []string) error {
+	fs := flag.NewFlagSet("rotate-secret", flag.ContinueOnError)
+	dbPath := fs.String("db", envOr("TM_DB", "traffic.db"), "path to the SQLite database file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	st, err := store.Open(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := st.RotateSessionSecret(); err != nil {
+		return err
+	}
+	fmt.Println("session secret rotated; all existing sessions are now invalid")
+	return nil
+}
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -190,6 +222,7 @@ Usage:
   traffic-monitor [serve] [flags]      run the monitor and web server
   traffic-monitor set-password [flags] set the admin web-panel password
   traffic-monitor reset-password       alias for set-password
+  traffic-monitor rotate-secret [-db]  rotate the session secret (logs everyone out)
   traffic-monitor version              print the build version
   traffic-monitor help                 show this help
 

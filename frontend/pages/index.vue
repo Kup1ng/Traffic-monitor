@@ -51,6 +51,7 @@ import type { TotalsResp, SummaryResp, InterfaceResp } from '~/composables/useAp
 
 const { getTotals, getSummary, getInterface, request } = useApi()
 const { bytesParts, formatDate } = useFormat()
+const auth = useAuth()
 const live = useLive()
 const { connected } = live
 
@@ -75,7 +76,8 @@ async function loadAll() {
 
   for (const r of [t, s, i]) {
     if (r.status === 'rejected' && isUnauthorized(r.reason)) {
-      await navigateTo('/login')
+      live.stop()
+      await auth.handleUnauthorized()
       return
     }
   }

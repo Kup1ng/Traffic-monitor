@@ -168,6 +168,7 @@ The service reads environment variables (written by `install.sh` into the system
 | `TM_FLUSH_INTERVAL` | `-flush` | `60s` | database flush interval |
 | `TM_SESSION_TTL` | `-session-ttl` | `168h` | session cookie lifetime |
 | `TM_COOKIE_SECURE` | `-cookie-secure` | `auto` | `Secure` cookie flag: `auto`/`true`/`false` |
+| `TM_TRUST_PROXY` | `-trust-proxy` | `false` | trust `X-Forwarded-For` for the client IP (enable **only** behind a trusted reverse proxy) |
 | `TM_DEMO` | `-demo` | `false` | synthetic counters (development) |
 
 ## API reference
@@ -204,7 +205,18 @@ numbers in **bits/second**.
 - 5-digit ports need no privileges; the systemd unit only grants `CAP_NET_BIND_SERVICE` if you
   override to a port below 1024.
 - The admin password is stored as a bcrypt hash in the SQLite database; the session secret is
-  generated on first run and persisted, so sessions survive restarts.
+  generated on first run and persisted, so sessions survive restarts. `set-web-path` also
+  rotates the session secret, immediately invalidating any outstanding tokens.
+- The login rate limiter keys on the connecting peer IP and **ignores `X-Forwarded-For` by
+  default** so a directly-exposed server can't be bypassed with a spoofed header. Set
+  `TM_TRUST_PROXY=true` only when a trusted reverse proxy sets the header.
+
+### Known limitation
+
+Day and month boundaries are accurate to the UTC hour. For timezones with a non-whole-hour
+offset (e.g. India +5:30, Nepal +5:45), the single hour that straddles local midnight is
+attributed to one side, so the "today"/"this month" edge can be off by up to that fractional
+hour. Long-window totals are exact.
 
 ## Screenshots
 

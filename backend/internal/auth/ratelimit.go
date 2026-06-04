@@ -62,14 +62,31 @@ func (l *rateLimiter) success(ip string) {
 	delete(l.attempts, ip)
 }
 
-// pruneLocked drops stale entries to keep the map small (called under lock).
+// maxRateLimiterEntries hard-caps the map so a flood of distinct keys (e.g.
+// spoofed addresses) cannot grow memory without bound.
+const maxRateLimiterEntries = 4096
+
+// pruneLocked drops stale entries and enforces a hard cap (called under lock).
 func (l *rateLimiter) pruneLocked(now time.Time) {
 	if len(l.attempts) < 1024 {
 		return
 	}
+	// Drop entries that are both unlocked and past their window.
 	for ip, a := range l.attempts {
 		if now.After(a.lockedUntil) && now.Sub(a.windowStart) > l.window {
 			delete(l.attempts, ip)
 		}
+	}
+	// Hard cap: evict the oldest entries if still over the limit.
+	for len(l.attempts) > maxRateLimiterEntries {
+		var oldestIP string
+		var oldest time.Time
+		first := true
+		for ip, a := range l.attempts {
+			if first || a.windowStart.Before(oldest) {
+				oldestIP, oldest, first = ip, a.windowStart, false
+			}
+		}
+		delete(l.attempts, oldestIP)
 	}
 }

@@ -33,7 +33,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := auth.New(st, secret, time.Hour, "false", "/")
+	a := auth.New(st, secret, time.Hour, "false", "/", false)
 	srv, err := NewServer(cfg, eng, a, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +97,31 @@ func TestSPARootServesIndex(t *testing.T) {
 	}
 }
 
+func TestStaticAssetMissingReturns404(t *testing.T) {
+	ts := httptest.NewServer(newTestHandler(t))
+	defer ts.Close()
+
+	for _, p := range []string{"/_nuxt/missing.js", "/nope.css", "/x.woff2"} {
+		resp, err := http.Get(ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404 (a missing asset must not return the HTML shell)", p, resp.StatusCode)
+		}
+	}
+	// An extension-less client route still falls back to index.html.
+	resp, err := http.Get(ts.URL + "/dashboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /dashboard = %d, want 200 (SPA fallback)", resp.StatusCode)
+	}
+}
+
 func TestSecretBasePath(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
@@ -113,7 +138,7 @@ func TestSecretBasePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := auth.New(st, secret, time.Hour, "false", base)
+	a := auth.New(st, secret, time.Hour, "false", base, false)
 	srv, err := NewServer(cfg, eng, a, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -144,6 +169,14 @@ func TestSecretBasePath(t *testing.T) {
 	}
 	if c := get("/wrongpath/"); c != http.StatusNotFound {
 		t.Fatalf("GET /wrongpath/ = %d, want 404", c)
+	}
+	// No-trailing-slash probes of the base must 404 (not 301), so the secret path
+	// isn't revealed by a differential response.
+	if c := get(strings.TrimRight(base, "/")); c != http.StatusNotFound {
+		t.Fatalf("GET %s = %d, want 404 (no 301 leak)", strings.TrimRight(base, "/"), c)
+	}
+	if c := get(strings.TrimRight(base+"api/", "/")); c != http.StatusNotFound {
+		t.Fatalf("GET %s = %d, want 404 (no 301 leak)", strings.TrimRight(base+"api/", "/"), c)
 	}
 
 	// The app lives under the base path.

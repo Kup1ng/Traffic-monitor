@@ -60,6 +60,15 @@ func (s *Server) Handler() http.Handler {
 	// The embedded SPA on every other path under the base.
 	mux.Handle(base, http.HandlerFunc(s.serveStatic))
 
+	// Without these, ServeMux would 301-redirect the no-trailing-slash forms of
+	// the subtree patterns (e.g. /<base> -> /<base>/), revealing that the secret
+	// base path is valid. Return 404 for those probes instead so they look like
+	// any other miss. (Guarded because TrimRight("/","/")=="" would panic.)
+	if base != "/" {
+		mux.HandleFunc(strings.TrimRight(base, "/"), http.NotFound)
+		mux.HandleFunc(strings.TrimRight(base+"api/", "/"), http.NotFound)
+	}
+
 	return recoverMW(mux)
 }
 
@@ -81,7 +90,16 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SPA fallback to index.html.
+	// A missing asset (hashed chunk, font, anything with a file extension) must
+	// 404 — returning the HTML shell would make the browser fail with a MIME
+	// error instead of a clean miss the SPA can recover from. Only extension-less
+	// client routes fall through to index.html.
+	if strings.HasPrefix(rel, "_nuxt/") || path.Ext(rel) != "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// SPA fallback to index.html for client-side routes.
 	idx, ok := s.files["index.html"]
 	if !ok {
 		http.NotFound(w, r)

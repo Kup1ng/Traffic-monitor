@@ -27,6 +27,7 @@ type Config struct {
 	CookieSecure  string         // "auto" | "true" | "false"
 	Demo          bool           // use synthetic counters (UI development on any OS)
 	BasePath      string         // secret base path the whole app is served under; "/" = root
+	TrustProxy    bool           // trust X-Forwarded-For (enable only behind a trusted reverse proxy)
 }
 
 // Default returns the built-in defaults before env/flag overrides are applied.
@@ -42,6 +43,7 @@ func Default() *Config {
 		CookieSecure:  "auto",
 		Demo:          false,
 		BasePath:      "/",
+		TrustProxy:    false,
 	}
 }
 
@@ -62,6 +64,7 @@ func Load(args []string) (*Config, error) {
 	fs.StringVar(&c.CookieSecure, "cookie-secure", c.CookieSecure, `Secure cookie flag: "auto", "true" or "false"`)
 	fs.BoolVar(&c.Demo, "demo", c.Demo, "use synthetic counters instead of real interface statistics")
 	fs.StringVar(&c.BasePath, "base-path", c.BasePath, "secret base path to serve the app under (default: root)")
+	fs.BoolVar(&c.TrustProxy, "trust-proxy", c.TrustProxy, "trust the X-Forwarded-For header (only behind a trusted reverse proxy)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -116,6 +119,11 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("TM_BASE_PATH"); v != "" {
 		c.BasePath = v
 	}
+	if v := os.Getenv("TM_TRUST_PROXY"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.TrustProxy = b
+		}
+	}
 }
 
 // NormalizeBasePath returns a base path with exactly one leading and trailing
@@ -155,6 +163,31 @@ func (c *Config) validate() error {
 	case "auto", "true", "false":
 	default:
 		return fmt.Errorf("cookie-secure must be auto, true or false (got %q)", c.CookieSecure)
+	}
+	if err := validateBasePath(c.BasePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateBasePath rejects base paths that would make http.ServeMux panic when
+// registering route patterns (unclean ".."/"." segments, spaces, "{"/"}", etc.).
+// The value is already normalized to "/" or "/seg.../".
+func validateBasePath(base string) error {
+	if base == "/" {
+		return nil
+	}
+	for _, seg := range strings.Split(strings.Trim(base, "/"), "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return fmt.Errorf("base path %q must not contain empty, %q or %q segments", base, ".", "..")
+		}
+		for _, r := range seg {
+			ok := (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+				r == '.' || r == '_' || r == '~' || r == '-'
+			if !ok {
+				return fmt.Errorf("base path %q contains invalid character %q (allowed: letters, digits, . _ ~ -)", base, string(r))
+			}
+		}
 	}
 	return nil
 }

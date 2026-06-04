@@ -60,6 +60,7 @@ const ranges = [
 ]
 const range = ref('hour')
 const buckets = ref<Bucket[]>([])
+const serverTz = ref('') // server IANA zone; used so day/month labels match how buckets were grouped
 const loading = ref(true)
 
 const rangeHint = computed(
@@ -78,14 +79,17 @@ function countFor(r: string): number {
 
 function fmtLabel(ts: number, r: string): string {
   const d = new Date(ts * 1000)
+  // Format in the server's timezone (when configured) so day/month labels match
+  // the zone the buckets were grouped in; otherwise use the browser's zone.
+  const tz = serverTz.value || undefined
   switch (r) {
     case '5min':
     case 'hour':
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz })
     case 'day':
-      return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: tz })
     case 'month':
-      return d.toLocaleDateString([], { month: 'short', year: '2-digit' })
+      return d.toLocaleDateString([], { month: 'short', year: '2-digit', timeZone: tz })
   }
   return ''
 }
@@ -143,6 +147,7 @@ async function load() {
   try {
     const res = await getHistory(range.value, countFor(range.value))
     buckets.value = res.buckets || []
+    serverTz.value = res.tz || ''
   } catch {
     buckets.value = []
   } finally {

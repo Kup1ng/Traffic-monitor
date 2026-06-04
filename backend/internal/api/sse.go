@@ -23,11 +23,16 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("Connection", "keep-alive")
 	h.Set("X-Accel-Buffering", "no") // disable proxy buffering (e.g. nginx)
 
+	rc := http.NewResponseController(w)
+
 	send := func() bool {
 		b, err := json.Marshal(s.eng.CurrentSpeed())
 		if err != nil {
 			return false
 		}
+		// A per-write deadline keeps a stalled/slow client from pinning this
+		// goroutine and its socket indefinitely.
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
 			return false
 		}
@@ -48,6 +53,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Stop streaming once the session expires (auth is only enforced once
+			// at connect time by the middleware).
+			if !s.auth.Authenticated(r) {
+				return
+			}
 			if !send() {
 				return
 			}

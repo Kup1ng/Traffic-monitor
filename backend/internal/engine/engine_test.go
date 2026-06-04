@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,5 +238,89 @@ func TestInterfaceMismatch(t *testing.T) {
 	var mism *IfaceMismatchError
 	if !errors.As(err, &mism) {
 		t.Fatalf("expected IfaceMismatchError, got %v", err)
+	}
+}
+
+// A boot_id token appearing (""-> non-empty) without an actual reboot must not
+// be misread as a reboot — otherwise the whole counter would be re-counted.
+func TestEmptyToNonEmptyBootIDNotReboot(t *testing.T) {
+	st := openStore(t)
+	r := collector.NewFakeReader("eth0", "") // boot_id initially unreadable
+	r.Set(1000, 500)
+	e := buildEngine(t, st, r)
+
+	r.Add(100, 40)
+	e.onTick(at(2)) // totals 100/40, anchor 1100/540, curBootID ""
+
+	// boot_id becomes readable; counters keep climbing (no real reboot).
+	r.SetBootID("boot-xyz")
+	r.Add(50, 20)
+	e.onTick(at(4)) // must be a normal delta of 50/20, NOT a full re-count
+	wantTotals(t, e, 150, 60)
+	if e.curBootID != "boot-xyz" {
+		t.Fatalf("boot id not adopted: %q", e.curBootID)
+	}
+}
+
+// Exercises the live runtime path (Run loop ticking + flushing) concurrently
+// with the API-facing accessors and a traffic generator. Run with -race to
+// catch data races on the engine's shared fields.
+func TestConcurrentAccessRace(t *testing.T) {
+	st := openStore(t)
+	r := collector.NewFakeReader("eth0", "boot-1")
+	cfg := &config.Config{PollInterval: 5 * time.Millisecond, FlushInterval: 15 * time.Millisecond, Location: time.UTC}
+	e, err := New(cfg, r, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = e.Run(ctx); close(done) }()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Traffic generator (FakeReader is mutex-guarded).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				r.Add(1000, 400)
+			}
+		}
+	}()
+
+	// Concurrent readers hammering every accessor.
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _, _, _ = e.Totals()
+					_ = e.CurrentSpeed()
+					_ = e.RecentSamples()
+					_, _ = e.Pending()
+				}
+			}
+		}()
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+	cancel()
+	<-done
+
+	if rx, _, _, _ := e.Totals(); rx == 0 {
+		t.Fatal("expected some traffic to be accounted")
 	}
 }

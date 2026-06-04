@@ -1,5 +1,7 @@
 package collector
 
+import "sync"
+
 // CounterReader is the abstraction the traffic engine polls. Implementations:
 //   - SysfsReader: real Linux interface counters (production)
 //   - DemoReader:  synthetic, realistic-looking traffic (UI dev on any OS)
@@ -27,12 +29,28 @@ func Delta(cur, prev uint64) uint64 {
 
 // SysfsReader reads real interface counters from /sys on Linux.
 type SysfsReader struct {
-	iface string
+	iface    string
+	mu       sync.Mutex
+	lastBoot string // last non-empty boot_id, retained across transient read failures
 }
 
 // NewSysfsReader returns a reader for the given interface.
 func NewSysfsReader(iface string) *SysfsReader { return &SysfsReader{iface: iface} }
 
 func (r *SysfsReader) Read() (uint64, uint64, error) { return ReadCounters(r.iface) }
-func (r *SysfsReader) BootID() string                { return ReadBootID() }
-func (r *SysfsReader) Iface() string                 { return r.iface }
+
+// BootID returns the current boot_id, falling back to the last successfully read
+// token when a read transiently fails (so the engine doesn't see a spurious
+// empty-string transition).
+func (r *SysfsReader) BootID() string {
+	cur := ReadBootID()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if cur != "" {
+		r.lastBoot = cur
+		return cur
+	}
+	return r.lastBoot
+}
+
+func (r *SysfsReader) Iface() string { return r.iface }

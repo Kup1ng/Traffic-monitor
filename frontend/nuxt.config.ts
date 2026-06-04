@@ -46,7 +46,9 @@ export default defineNuxtConfig({
         { name: 'color-scheme', content: 'light' },
         { name: 'description', content: 'Lightweight self-hosted network traffic monitor' },
       ],
-      link: [{ rel: 'icon', type: 'image/svg+xml', href: 'favicon.svg' }],
+      // Base-prefixed so it is rewritten to /<base>/favicon.svg and resolves on
+      // every route (a bare relative href breaks on subroutes like /<base>/login).
+      link: [{ rel: 'icon', type: 'image/svg+xml', href: BUILD_BASE + 'favicon.svg' }],
     },
   },
 

@@ -178,6 +178,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"range":   rng,
 		"buckets": toJSONBuckets(buckets),
+		"tz":      s.cfg.TZ, // server IANA zone (empty = system local); used for day/month labels
 	})
 }
 

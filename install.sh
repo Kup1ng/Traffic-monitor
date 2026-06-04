@@ -116,7 +116,10 @@ gen_web_path() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 8
   elif [ -r /dev/urandom ]; then
-    LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 14
+    # Read a FINITE block first (so the producer gets EOF, not SIGPIPE which would
+    # abort under `set -o pipefail`), filter, then take 16 chars with cut (cut
+    # reads all input, so it never closes the pipe early either).
+    head -c 512 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | cut -c1-16
   else
     printf 'p%s%s' "$(date +%s)" "$$"
   fi
@@ -188,20 +191,33 @@ cmd_install() {
   require_root
   [ -f "$BIN_SRC" ] || die "binary not found at ${BIN_SRC} — copy the built ${BIN_NAME} there first"
 
-  # Reuse an existing install's port and secret path so reinstall is stable.
-  local ex_listen ex_path
+  # Stop a running instance first so the new binary/config and set-password are
+  # applied cleanly (and the database is never open by two processes at once).
+  systemctl stop "$SERVICE" 2>/dev/null || true
+
+  # Reuse an existing install's port, secret path, and interface so reinstall is
+  # stable.
+  local ex_listen ex_path ex_iface
   ex_listen="$(get_config_value TM_LISTEN || echo '')"
   ex_path="$(get_config_value TM_BASE_PATH || echo '')"
+  ex_iface="$(get_config_value TM_INTERFACE || echo '')"
 
-  # Interface.
-  local def; def="$(default_iface || true)"
+  # Interface (default to the existing one on reinstall — history is tied to it).
+  local def def_iface
+  def="$(default_iface || true)"
+  def_iface="${ex_iface:-${def:-eth0}}"
   if [ -z "$OPT_IFACE" ]; then
     echo "Available interfaces:"
     while read -r n; do
       if [ "$n" = "$def" ]; then echo "  ${n}  (default route)"; else echo "  ${n}"; fi
     done < <(list_ifaces)
-    read -r -p "Interface to monitor [${def:-eth0}]: " OPT_IFACE || true
-    OPT_IFACE="${OPT_IFACE:-${def:-eth0}}"
+    read -r -p "Interface to monitor [${def_iface}]: " OPT_IFACE || true
+    OPT_IFACE="${OPT_IFACE:-${def_iface}}"
+  fi
+  # Changing the monitored interface while keeping history would crash-loop the
+  # service (the stored counter state is tied to the original interface).
+  if [ -n "$ex_iface" ] && [ "$OPT_IFACE" != "$ex_iface" ] && [ -f "$DB_PATH" ]; then
+    die "this install monitors '${ex_iface}' and has existing history; changing it to '${OPT_IFACE}' would crash-loop. Keep '${ex_iface}', or run 'uninstall' (deleting data) first."
   fi
 
   # Bind address.
@@ -231,7 +247,8 @@ cmd_install() {
     fi
   fi
   OPT_WEB_PATH="$(sanitize_web_path "$OPT_WEB_PATH")"
-  [ -n "$OPT_WEB_PATH" ] || die "secret web path must not be empty"
+  printf '%s' "$OPT_WEB_PATH" | grep -q '[A-Za-z0-9]' || \
+    die "secret web path must contain letters or digits (got '${OPT_WEB_PATH}')"
 
   # Password.
   [ -n "$OPT_PASSWORD" ] || OPT_PASSWORD="$(prompt_password)"
@@ -270,7 +287,10 @@ EOF
   info "Writing systemd unit -> ${UNIT_FILE}"
   write_unit "$OPT_PORT"
   systemctl daemon-reload
-  systemctl enable --now "$SERVICE"
+  systemctl enable "$SERVICE"
+  # restart (not `enable --now`): start if stopped, and re-exec with the new
+  # binary/config if it was already running — `start` on an active unit is a no-op.
+  systemctl restart "$SERVICE"
 
   echo
   ok "Installed and started."
@@ -338,11 +358,20 @@ cmd_set_web_path() {
     newpath="$(gen_web_path)"
   fi
   newpath="$(sanitize_web_path "$newpath")"
-  [ -n "$newpath" ] || die "web path must not be empty"
+  printf '%s' "$newpath" | grep -q '[A-Za-z0-9]' || \
+    die "web path must contain letters or digits (got '${newpath}')"
   set_config_value TM_BASE_PATH "$newpath"
+  # Rotate the session secret so previously-issued tokens are truly invalidated
+  # (the cookie Path change alone does not invalidate a captured/replayed token).
+  if run_as_user "$BIN_DST" rotate-secret --db "$DB_PATH" >/dev/null 2>&1; then
+    local rotated=1
+  else
+    local rotated=0
+    warn "could not rotate the session secret; existing tokens stay valid until they expire"
+  fi
   systemctl restart "$SERVICE" 2>/dev/null || true
   ok "Secret web path updated to: ${newpath}"
-  warn "Existing sessions are invalidated; log in again at the new path."
+  [ "$rotated" = 1 ] && ok "Session secret rotated — all existing sessions are now invalid."
   print_url
 }
 

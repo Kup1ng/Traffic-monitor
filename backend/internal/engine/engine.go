@@ -48,11 +48,12 @@ type Engine struct {
 
 	// Fields below marked (run) are touched only by the run goroutine (onTick,
 	// flush, recover run sequentially), so they need no lock.
-	lastRawRX, lastRawTX uint64 // (run) last raw counter seen
-	pendRX, pendTX       uint64 // (run) bytes accumulated since last durable flush
-	curBootID            string // (run)
-	curHourKey           int64  // (run) UTC start-of-hour the pending belongs to
-	curFiveKey           int64  // (run) UTC start-of-5-minute the pending belongs to
+	lastRawRX, lastRawTX uint64    // (run) last raw counter seen
+	pendRX, pendTX       uint64    // (run) bytes accumulated since last durable flush
+	curBootID            string    // (run)
+	curHourKey           int64     // (run) UTC start-of-hour the pending belongs to
+	curFiveKey           int64     // (run) UTC start-of-5-minute the pending belongs to
+	lastReadAt           time.Time // (run) wall clock of the last successful counter read
 
 	mu             sync.Mutex // guards the API-visible fields below
 	rxTotal        uint64     // cumulative received (DB total + pending)
@@ -116,8 +117,11 @@ func (e *Engine) recover() error {
 		e.rxTotal, e.txTotal = st.RXTotal, st.TXTotal
 		e.installUnix = st.InstallUnix
 
+		// Treat as a reboot only when both boot_id tokens are known and differ; an
+		// empty/unknown token falls back to magnitude-based reset detection so a
+		// transient boot_id read failure can't be misread as a reboot.
 		var recRX, recTX uint64
-		if bid != st.BootID {
+		if bid != "" && st.BootID != "" && bid != st.BootID {
 			recRX, recTX = rx, tx // reboot: counters were zeroed; full value is the delta
 		} else {
 			recRX, recTX = collector.Delta(rx, st.LastRawRX), collector.Delta(tx, st.LastRawTX)
@@ -140,6 +144,7 @@ func (e *Engine) recover() error {
 	e.pendRX, e.pendTX = 0, 0
 	e.curBootID = bid
 	e.curHourKey, e.curFiveKey = hk, fk
+	e.lastReadAt = now
 	e.lastUpdateUnix = now.Unix()
 	e.lastSample = Sample{TS: now.UnixMilli()}
 	return nil
@@ -173,24 +178,42 @@ func (e *Engine) Run(ctx context.Context) error {
 func (e *Engine) onTick(now time.Time) {
 	rx, tx, err := e.reader.Read()
 	if err != nil {
-		// Transient read error (e.g. interface down): skip without touching the
-		// anchor so no bytes are mis-attributed.
+		// Read failed (e.g. interface down): show zero on the live chart and leave
+		// the anchor/totals untouched so no bytes are mis-attributed.
+		zero := Sample{TS: now.UnixMilli()}
+		e.mu.Lock()
+		e.lastSample = zero
+		e.ring.push(zero)
+		e.mu.Unlock()
 		return
 	}
 	bid := e.reader.BootID()
 
-	reboot := bid != e.curBootID
+	// Treat as a reboot only when both boot_id tokens are known and differ; an
+	// empty token can't trigger a (mis)detected reboot that would re-count the
+	// whole counter.
+	reboot := bid != "" && e.curBootID != "" && bid != e.curBootID
 	var dRX, dTX uint64
 	if reboot {
 		dRX, dTX = rx, tx
-		e.curBootID = bid
 	} else {
 		dRX, dTX = collector.Delta(rx, e.lastRawRX), collector.Delta(tx, e.lastRawTX)
+	}
+	if bid != "" {
+		e.curBootID = bid // adopt the current token (without re-counting)
 	}
 	resetDown := rx < e.lastRawRX || tx < e.lastRawTX
 	e.lastRawRX, e.lastRawTX = rx, tx
 
+	// Speed over the actual elapsed time since the last successful read, so a gap
+	// of skipped ticks doesn't inflate the recovery sample.
 	secs := e.poll.Seconds()
+	if !e.lastReadAt.IsZero() {
+		if el := now.Sub(e.lastReadAt).Seconds(); el > 0 {
+			secs = el
+		}
+	}
+	e.lastReadAt = now
 	sample := Sample{TS: now.UnixMilli(), RXbps: float64(dRX) * 8 / secs, TXbps: float64(dTX) * 8 / secs}
 
 	e.mu.Lock()
@@ -206,11 +229,12 @@ func (e *Engine) onTick(now time.Time) {
 	hk, fk := hourKey(now), fiveKey(now)
 	switch {
 	case fk != e.curFiveKey:
-		// Bucket rollover: persist accumulated pending into the bucket that just
-		// ended, then switch to the new one. (A 5-minute boundary also covers any
-		// hour boundary, since hours are multiples of 5 minutes.)
-		e.flush(now, e.curHourKey, e.curFiveKey)
-		e.curHourKey, e.curFiveKey = hk, fk
+		// Bucket rollover: flush pending into the bucket that just ended. Advance
+		// the keys only if the flush persisted, so a failed flush retries into the
+		// correct (old) bucket next time instead of mis-attributing to the new one.
+		if e.flush(now, e.curHourKey, e.curFiveKey) {
+			e.curHourKey, e.curFiveKey = hk, fk
+		}
 	case reboot || resetDown:
 		// Counter reset without a bucket change: flush now to shrink the crash
 		// window so the durable anchor reflects the post-reset counter.
@@ -219,9 +243,8 @@ func (e *Engine) onTick(now time.Time) {
 }
 
 // flush persists the current pending delta into the given bucket keys and
-// advances the durable anchor, all in one transaction. On success it subtracts
-// exactly what was persisted from pending (never zeroes it).
-func (e *Engine) flush(now time.Time, hourK, fiveK int64) {
+// advances the durable anchor in one transaction. It returns true on success.
+func (e *Engine) flush(now time.Time, hourK, fiveK int64) bool {
 	e.mu.Lock()
 	pr, pt := e.pendRX, e.pendTX
 	e.mu.Unlock()
@@ -236,7 +259,7 @@ func (e *Engine) flush(now time.Time, hourK, fiveK int64) {
 		PruneBefore: fiveKey(now.Add(-fiveMinRetention)),
 	}); err != nil {
 		log.Printf("engine: flush failed (will retry, no data lost): %v", err)
-		return
+		return false
 	}
 
 	// Subtract exactly what was persisted; bytes that arrived during the flush
@@ -245,6 +268,7 @@ func (e *Engine) flush(now time.Time, hourK, fiveK int64) {
 	e.pendRX -= pr
 	e.pendTX -= pt
 	e.mu.Unlock()
+	return true
 }
 
 // --- API-facing accessors (thread-safe) ---

@@ -16,7 +16,14 @@ export function useFormat() {
       v /= 1000
       i++
     }
-    const digits = i === 0 ? 0 : v >= 100 ? 1 : 2
+    let digits = i === 0 ? 0 : v >= 100 ? 1 : 2
+    // Rounding can push e.g. 999.99 up to 1000; carry to the next unit so we
+    // show "1.00 MB" instead of "1000.0 KB".
+    if (Number(v.toFixed(digits)) >= 1000 && i < units.length - 1) {
+      v /= 1000
+      i++
+      digits = v >= 100 ? 1 : 2
+    }
     return { value: v.toFixed(digits), unit: units[i] }
   }
 

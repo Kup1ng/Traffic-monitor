@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +17,7 @@ func newTestAuth(t *testing.T) (*Authenticator, *store.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return New(st, []byte("test-secret-32-bytes-long-padding!!"), time.Hour, "auto", "/"), st
+	return New(st, []byte("test-secret-32-bytes-long-padding!!"), time.Hour, "auto", "/", false), st
 }
 
 func TestPasswordHashAndCheck(t *testing.T) {
@@ -42,6 +44,36 @@ func TestPasswordHashAndCheck(t *testing.T) {
 	}
 }
 
+func TestLongPassword(t *testing.T) {
+	a, st := newTestAuth(t)
+	long := strings.Repeat("p", 100) // > 72 bytes, which raw bcrypt rejects
+	if err := SetPassword(st, long); err != nil {
+		t.Fatalf("SetPassword(long): %v", err)
+	}
+	if ok, err := a.CheckPassword(long); err != nil || !ok {
+		t.Fatalf("CheckPassword(long) = ok=%v err=%v, want true", ok, err)
+	}
+	if ok, _ := a.CheckPassword(strings.Repeat("p", 99)); ok {
+		t.Fatal("a different long password must not match")
+	}
+}
+
+func TestClientIPTrustProxy(t *testing.T) {
+	a, _ := newTestAuth(t)
+	r := httptest.NewRequest("POST", "/api/login", nil)
+	r.RemoteAddr = "10.0.0.5:1234"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	a.trustProxy = false
+	if ip := a.clientIP(r); ip != "10.0.0.5" {
+		t.Errorf("untrusted clientIP = %q, want 10.0.0.5 (XFF must be ignored)", ip)
+	}
+	a.trustProxy = true
+	if ip := a.clientIP(r); ip != "1.2.3.4" {
+		t.Errorf("trusted clientIP = %q, want 1.2.3.4", ip)
+	}
+}
+
 func TestCookieSignVerify(t *testing.T) {
 	a, _ := newTestAuth(t)
 	now := time.Unix(1_000_000, 0)
@@ -61,7 +93,7 @@ func TestCookieSignVerify(t *testing.T) {
 		t.Fatal("tampered token must not verify")
 	}
 	// Wrong secret.
-	other := New(nil, []byte("a-totally-different-secret-key-123456"), time.Hour, "auto", "/")
+	other := New(nil, []byte("a-totally-different-secret-key-123456"), time.Hour, "auto", "/", false)
 	if other.verify(tok, now) {
 		t.Fatal("token must not verify under a different secret")
 	}

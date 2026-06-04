@@ -43,6 +43,7 @@ export interface Bucket {
 export interface HistoryResp {
   range: string
   buckets: Bucket[]
+  tz?: string // server IANA zone (empty = system local) for day/month labels
 }
 
 export interface Sample {

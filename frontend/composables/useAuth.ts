@@ -27,8 +27,20 @@ export function useAuth() {
       await api.logout()
     } finally {
       authenticated.value = false
+      await navigateTo('/login')
     }
   }
 
-  return { authenticated, passwordConfigured, checked, refresh, login, logout }
+  // handleUnauthorized centralizes the response to a 401 (expired/invalid
+  // session): mark the session invalid, force the next navigation to
+  // re-validate, and redirect to login. navigateTo('/login') is a no-op when
+  // already there, and since authenticated is false the middleware will not
+  // bounce the user back off /login (avoids the redirect loop).
+  async function handleUnauthorized(): Promise<void> {
+    authenticated.value = false
+    checked.value = false
+    await navigateTo('/login')
+  }
+
+  return { authenticated, passwordConfigured, checked, refresh, login, logout, handleUnauthorized }
 }
