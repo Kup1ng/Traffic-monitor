@@ -45,7 +45,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        # npm install (not ci): a transitive dep (@bomb.sh/tab) requests a
+        # commander version that npm dedupes inconsistently, which trips npm ci's
+        # strict lock check. npm install reconciles and builds fine.
+        run: npm install --no-audit --no-fund
 
       - name: Build static SPA
         run: npm run generate

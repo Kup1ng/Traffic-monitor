@@ -14,7 +14,7 @@ clean_embed() {
 
 echo "==> Building frontend (nuxt generate)"
 cd "$ROOT/frontend"
-[ -d node_modules ] || npm ci --no-audit --no-fund
+[ -d node_modules ] || npm install --no-audit --no-fund
 npm run generate
 
 echo "==> Staging embedded assets into backend/web/public"

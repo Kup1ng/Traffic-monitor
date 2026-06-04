@@ -19,7 +19,7 @@ function Clear-Embed {
 Write-Host '==> Building frontend (nuxt generate)'
 Push-Location (Join-Path $root 'frontend')
 try {
-  if (-not (Test-Path 'node_modules')) { npm ci --no-audit --no-fund }
+  if (-not (Test-Path 'node_modules')) { npm install --no-audit --no-fund }
   npm run generate
 } finally { Pop-Location }
 if (-not (Test-Path (Join-Path $root 'frontend\.output\public\_nuxt'))) {
