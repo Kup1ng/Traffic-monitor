@@ -9,7 +9,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -19,8 +22,10 @@ import (
 
 	_ "time/tzdata" // embed the IANA timezone database for TM_TZ on any host
 
+	"github.com/Kup1ng/Traffic-monitor/internal/auth"
 	"github.com/Kup1ng/Traffic-monitor/internal/collector"
 	"github.com/Kup1ng/Traffic-monitor/internal/config"
+	"github.com/Kup1ng/Traffic-monitor/internal/store"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
@@ -37,6 +42,10 @@ func main() {
 	switch sub {
 	case "serve":
 		if err := runServe(args); err != nil {
+			fail(err)
+		}
+	case "set-password", "reset-password":
+		if err := runSetPassword(args); err != nil {
 			fail(err)
 		}
 	case "version", "--version", "-v":
@@ -107,6 +116,49 @@ func runServe(args []string) error {
 	}
 }
 
+// runSetPassword handles the set-password / reset-password subcommands. The
+// password comes from --password or, by default, one line on stdin (install.sh
+// pipes it via --stdin so it never appears in the process list).
+func runSetPassword(args []string) error {
+	fs := flag.NewFlagSet("set-password", flag.ContinueOnError)
+	dbPath := fs.String("db", envOr("TM_DB", "traffic.db"), "path to the SQLite database file")
+	pw := fs.String("password", "", "new password (omit to read one line from stdin)")
+	fs.Bool("stdin", false, "read the password from stdin (the default when --password is absent)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	password := *pw
+	if password == "" {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			return fmt.Errorf("read password from stdin: %w", err)
+		}
+		password = strings.TrimRight(line, "\r\n")
+	}
+	if password == "" {
+		return errors.New("password must not be empty")
+	}
+
+	st, err := store.Open(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := auth.SetPassword(st, password); err != nil {
+		return err
+	}
+	fmt.Println("admin password updated")
+	return nil
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func bitsPerSec(bytes uint64, secs float64) string {
 	bps := float64(bytes) * 8 / secs
 	switch {
@@ -125,11 +177,13 @@ func usage() {
 	fmt.Printf(`traffic-monitor %s
 
 Usage:
-  traffic-monitor [serve] [flags]   run the monitor and web server
-  traffic-monitor version           print the build version
-  traffic-monitor help              show this help
+  traffic-monitor [serve] [flags]      run the monitor and web server
+  traffic-monitor set-password [flags] set the admin web-panel password
+  traffic-monitor reset-password       alias for set-password
+  traffic-monitor version              print the build version
+  traffic-monitor help                 show this help
 
-Run "traffic-monitor serve -h" for the list of flags.
+Run "traffic-monitor serve -h" or "traffic-monitor set-password -h" for flags.
 `, version)
 }
 
