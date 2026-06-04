@@ -1,22 +1,22 @@
 import { definePreset } from '@primeuix/themes'
 import Aura from '@primeuix/themes/aura'
 
-// Retheme PrimeVue's primary color from Aura's default emerald to brand-blue so
-// buttons and active controls match the sky/amber data palette.
+// Retheme PrimeVue's primary color to clay violet so buttons and active controls
+// match the claymorphism palette.
 const TrafficPreset = definePreset(Aura, {
   semantic: {
     primary: {
-      50: '{blue.50}',
-      100: '{blue.100}',
-      200: '{blue.200}',
-      300: '{blue.300}',
-      400: '{blue.400}',
-      500: '{blue.500}',
-      600: '{blue.600}',
-      700: '{blue.700}',
-      800: '{blue.800}',
-      900: '{blue.900}',
-      950: '{blue.950}',
+      50: '{violet.50}',
+      100: '{violet.100}',
+      200: '{violet.200}',
+      300: '{violet.300}',
+      400: '{violet.400}',
+      500: '{violet.500}',
+      600: '{violet.600}',
+      700: '{violet.700}',
+      800: '{violet.800}',
+      900: '{violet.900}',
+      950: '{violet.950}',
     },
   },
 })
@@ -32,11 +32,11 @@ export default defineNuxtConfig({
     baseURL: '/',
     head: {
       title: 'Traffic Monitor',
-      htmlAttrs: { lang: 'en', class: 'dark' },
+      htmlAttrs: { lang: 'en' },
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'color-scheme', content: 'dark' },
+        { name: 'color-scheme', content: 'light' },
         { name: 'description', content: 'Lightweight self-hosted network traffic monitor' },
       ],
       link: [{ rel: 'icon', type: 'image/svg+xml', href: 'favicon.svg' }],

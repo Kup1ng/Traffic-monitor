@@ -2,16 +2,16 @@
   <div class="min-h-dvh">
     <TopBar :iface="iface" :connected="connected" />
 
-    <main class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
+    <main class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6">
       <!-- Cumulative totals -->
-      <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section class="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-3">
         <KpiCard label="Total download" icon="pi pi-arrow-down" accent="rx" :parts="dl" sub="Received since install" />
         <KpiCard label="Total upload" icon="pi pi-arrow-up" accent="tx" :parts="ul" sub="Transmitted since install" />
         <KpiCard label="Grand total" icon="pi pi-database" accent="brand" :parts="total" sub="Combined RX + TX" />
       </section>
 
       <!-- Live + summary -->
-      <section class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <section class="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
         <LiveThroughput class="lg:col-span-2" />
         <SummaryPanel :summary="summary" />
       </section>
@@ -20,7 +20,7 @@
       <PeriodChart />
 
       <!-- Footer / interface details -->
-      <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-edge pt-5 text-xs text-muted">
+      <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-5 text-xs text-muted">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span v-if="iface">
             <span class="text-ink tnum">{{ iface.name }}</span>

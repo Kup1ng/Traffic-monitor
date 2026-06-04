@@ -21,7 +21,8 @@ no CORS, no runtime dependencies.
   ~30-day window.
 - **Professional dashboard.** Real-time throughput chart (Server-Sent Events), cumulative
   total cards, a live usage summary (today / 24h / month / all-time), and hourly/daily/monthly
-  history bars. Dark, responsive, keyboard-accessible.
+  history bars. Soft claymorphism look, fully responsive (mobile to large
+  screens), keyboard-accessible.
 - **Tiny footprint.** Pure-Go, near-zero idle CPU/RAM, a single SQLite file (WAL, one tiny
   write per minute), and a ~16 MB static binary that opens fast.
 - **Secure by default.** Single admin, bcrypt password hash, HMAC-signed session cookie,

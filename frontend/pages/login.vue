@@ -2,17 +2,14 @@
   <div class="min-h-dvh grid place-items-center px-4">
     <div class="w-full max-w-sm">
       <div class="mb-8 flex items-center justify-center gap-3">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--rx)" stroke-width="2.5" stroke-linecap="round"
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linecap="round"
           stroke-linejoin="round" class="h-7 w-7">
           <path d="M2 12h4l3 8 4-16 3 8h6" />
         </svg>
-        <h1 class="text-xl font-semibold tracking-tight">Traffic Monitor</h1>
+        <h1 class="text-xl font-semibold tracking-tight text-ink">Traffic Monitor</h1>
       </div>
 
-      <form
-        class="rounded-2xl border border-edge bg-surface/70 p-6 shadow-2xl backdrop-blur"
-        @submit.prevent="onSubmit"
-      >
+      <form class="clay p-7" @submit.prevent="onSubmit">
         <label for="pw" class="mb-2 block text-sm text-muted">Admin password</label>
         <Password
           input-id="pw"

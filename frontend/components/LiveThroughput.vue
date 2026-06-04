@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full flex-col rounded-2xl border border-edge bg-surface/60 p-5 shadow-lg backdrop-blur">
+  <div class="flex h-full flex-col clay p-6">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h2 class="text-sm font-semibold text-ink">Live throughput</h2>
@@ -102,8 +102,8 @@ const chartOptions = computed(() => {
         backgroundColor: colors.tooltipBg,
         borderColor: colors.tooltipBorder,
         borderWidth: 1,
-        titleColor: '#e6eaf2',
-        bodyColor: '#e6eaf2',
+        titleColor: colors.tooltipText,
+        bodyColor: colors.tooltipText,
         padding: 10,
         callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${formatSpeed(Number(ctx.parsed.y))}` },
       },

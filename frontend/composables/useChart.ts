@@ -1,15 +1,16 @@
 // Shared chart palette and helpers so the live and history charts share one
-// look that matches the dark design system.
+// look that matches the light claymorphism design system.
 export function useChart() {
   const colors = {
-    rx: '#38bdf8',
-    tx: '#fb923c',
-    rxFill: 'rgba(56, 189, 248, 0.18)',
-    txFill: 'rgba(251, 146, 60, 0.16)',
-    grid: 'rgba(40, 49, 71, 0.55)',
-    ticks: '#94a3b8',
-    tooltipBg: '#0b0f19',
-    tooltipBorder: '#283147',
+    rx: '#3b9ef7',
+    tx: '#ff9a5c',
+    rxFill: 'rgba(59, 158, 247, 0.16)',
+    txFill: 'rgba(255, 154, 92, 0.15)',
+    grid: 'rgba(124, 110, 222, 0.14)',
+    ticks: '#8b8bad',
+    tooltipBg: '#ffffff',
+    tooltipBorder: 'rgba(124, 110, 222, 0.22)',
+    tooltipText: '#44425f',
     font: "'Fira Sans', ui-sans-serif, system-ui, sans-serif",
   }
 

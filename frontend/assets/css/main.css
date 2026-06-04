@@ -11,33 +11,55 @@
   @tailwind utilities;
 }
 
-/* Dark-only design system tokens (OLED-friendly, high contrast). */
+/* ============================================================================
+   Claymorphism design system — soft pastel, light, puffy clay surfaces.
+   ========================================================================== */
 :root {
-  --bg: #0b0f19;
-  --surface: #121826;
-  --surface-2: #1a2233;
-  --border: #283147;
-  --text: #e6eaf2;
-  --text-muted: #94a3b8;
-  --rx: #38bdf8; /* download / received  — sky */
-  --tx: #fb923c; /* upload / transmitted — amber */
-  --brand: #3b82f6;
-  --up: #22c55e;
-  --warn: #f59e0b;
-  --down: #ef4444;
+  --bg: #e5e7f6;
+  --surface: #eef0fd; /* puffy card surface */
+  --surface-soft: #e7e9f8; /* carved-in fields / tracks */
+  --text: #44425f;
+  --text-muted: #8b8bad;
+  --border: rgba(124, 110, 222, 0.12);
+
+  --rx: #3b9ef7; /* download / received — soft blue */
+  --tx: #ff9a5c; /* upload / transmitted — soft peach */
+  --brand: #8b5cf6; /* clay violet */
+  --up: #34c79a;
+  --warn: #f5b73c;
+  --down: #fb6f6f;
+
+  --radius: 28px;
+  --radius-sm: 18px;
+
+  /* Signature clay shadows: soft colored outer drop + inset light highlight
+     (top-left) + inset soft shade (bottom-right) for the inflated 3D look. */
+  --clay:
+    0 18px 40px -16px rgba(120, 110, 200, 0.45),
+    inset -6px -6px 12px rgba(168, 170, 222, 0.25),
+    inset 8px 8px 18px rgba(255, 255, 255, 0.92);
+  --clay-sm:
+    0 10px 22px -12px rgba(120, 110, 200, 0.42),
+    inset -3px -3px 7px rgba(168, 170, 222, 0.22),
+    inset 4px 5px 11px rgba(255, 255, 255, 0.88);
+  --clay-inset:
+    inset 5px 5px 12px rgba(168, 170, 222, 0.45),
+    inset -4px -4px 10px rgba(255, 255, 255, 0.9);
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
-    radial-gradient(1000px 500px at -10% 10%, rgba(56, 189, 248, 0.08), transparent 55%),
+    radial-gradient(1100px 620px at 10% -10%, rgba(139, 124, 246, 0.20), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(255, 154, 92, 0.13), transparent 55%),
+    radial-gradient(1000px 760px at 50% 120%, rgba(52, 199, 154, 0.12), transparent 55%),
     var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: 'Fira Sans', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -51,30 +73,45 @@ body {
   font-feature-settings: 'tnum' 1;
 }
 
-::selection {
-  background: rgba(56, 189, 248, 0.3);
+/* Clay surface utilities. */
+.clay {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--clay);
+}
+.clay-sm {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--clay-sm);
+}
+.clay-inset {
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--clay-inset);
 }
 
-/* Slim, dark scrollbars. */
+::selection {
+  background: rgba(139, 124, 246, 0.25);
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--surface-2) transparent;
+  scrollbar-color: #cdcef0 transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--surface-2);
+  background: #d3d4f2;
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
-/* Visible focus for keyboard users. */
 :focus-visible {
-  outline: 2px solid var(--rx);
-  outline-offset: 2px;
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -86,4 +123,85 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================================
+   PrimeVue clay overrides (unlayered = wins over the primevue layer).
+   ========================================================================== */
+.p-button {
+  border: none;
+  border-radius: 14px;
+  font-weight: 600;
+  box-shadow:
+    0 10px 18px -10px rgba(139, 92, 246, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+.p-button:not(:disabled):hover {
+  filter: brightness(1.04);
+}
+.p-button:not(:disabled):active {
+  transform: translateY(2px);
+  box-shadow:
+    0 4px 10px -8px rgba(139, 92, 246, 0.55),
+    inset 0 2px 5px rgba(76, 40, 130, 0.18);
+}
+.p-button.p-button-secondary,
+.p-button.p-button-text {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--clay-sm);
+}
+.p-button.p-button-text:not(:disabled):hover {
+  color: var(--brand);
+  filter: none;
+}
+
+/* Inputs: carved-in clay fields. */
+.p-inputtext,
+.p-password-input {
+  border: none !important;
+  border-radius: 14px;
+  background: var(--surface-soft) !important;
+  box-shadow: var(--clay-inset);
+  color: var(--text);
+}
+.p-password,
+.p-password-input {
+  width: 100%;
+}
+.p-password .p-password-toggle-mask,
+.p-password .p-icon {
+  color: var(--text-muted);
+}
+
+/* SelectButton: an inset track with a raised clay pill for the selected segment. */
+.p-selectbutton {
+  background: var(--surface-soft);
+  border-radius: 14px;
+  box-shadow: var(--clay-inset);
+  padding: 4px;
+  gap: 3px;
+  border: none;
+}
+.p-selectbutton .p-togglebutton {
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  box-shadow: none;
+  transition: color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.p-selectbutton .p-togglebutton::before {
+  display: none;
+}
+.p-selectbutton .p-togglebutton.p-togglebutton-checked,
+.p-selectbutton .p-togglebutton.p-highlight {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: var(--clay-sm);
+}
+.p-selectbutton .p-togglebutton-content {
+  background: transparent;
 }

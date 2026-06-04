@@ -1,17 +1,17 @@
 <template>
-  <div class="flex h-full flex-col rounded-2xl border border-edge bg-surface/60 p-5 shadow-lg backdrop-blur">
+  <div class="flex h-full flex-col clay p-6">
     <h2 class="text-sm font-semibold text-ink">Usage summary</h2>
 
     <div v-if="!summary" class="flex flex-1 items-center justify-center py-8">
       <i class="pi pi-spin pi-spinner text-muted" />
     </div>
 
-    <ul v-else class="mt-3 flex flex-1 flex-col divide-y divide-edge/70">
+    <ul v-else class="mt-3 flex flex-1 flex-col divide-y divide-black/5">
       <li
         v-for="row in rows"
         :key="row.label"
         class="flex items-center justify-between gap-3 py-3"
-        :class="row.strong ? 'mt-auto border-t border-edge pt-3' : ''"
+        :class="row.strong ? 'mt-auto border-t border-black/10 pt-3' : ''"
       >
         <span class="text-sm" :class="row.strong ? 'font-semibold text-ink' : 'text-muted'">
           {{ row.label }}

@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-2xl border border-edge bg-surface/60 p-5 shadow-lg backdrop-blur">
+  <div class="clay p-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="text-sm font-semibold text-ink">History</h2>
@@ -19,9 +19,10 @@
     <div class="relative mt-4 h-72">
       <div
         v-if="loading"
-        class="absolute inset-0 z-10 grid place-items-center bg-surface/30 backdrop-blur-sm"
+        class="absolute inset-0 z-10 grid place-items-center rounded-2xl"
+        style="background: color-mix(in srgb, var(--surface) 70%, transparent)"
       >
-        <i class="pi pi-spin pi-spinner text-muted" />
+        <i class="pi pi-spin pi-spinner text-brand" />
       </div>
       <div
         v-else-if="!buckets.length"
@@ -128,8 +129,8 @@ const chartOptions = computed(() => ({
       backgroundColor: colors.tooltipBg,
       borderColor: colors.tooltipBorder,
       borderWidth: 1,
-      titleColor: '#e6eaf2',
-      bodyColor: '#e6eaf2',
+      titleColor: colors.tooltipText,
+      bodyColor: colors.tooltipText,
       padding: 10,
       callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${formatBytes(Number(ctx.parsed.y))}` },
     },

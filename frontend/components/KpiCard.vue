@@ -1,13 +1,16 @@
 <template>
   <div
-    class="rounded-2xl border border-edge bg-surface/60 p-5 shadow-lg backdrop-blur transition-colors hover:border-white/15"
+    class="clay p-6 transition-transform duration-200 hover:-translate-y-1"
     :style="{ '--accent': accentColor }"
   >
     <div class="flex items-center justify-between">
       <span class="text-sm font-medium text-muted">{{ label }}</span>
       <span
-        class="grid h-9 w-9 place-items-center rounded-xl"
-        :style="{ background: 'color-mix(in srgb, var(--accent) 16%, transparent)' }"
+        class="grid h-10 w-10 place-items-center rounded-2xl"
+        :style="{
+          background: 'color-mix(in srgb, var(--accent) 18%, var(--surface))',
+          boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.7), 0 4px 8px -4px color-mix(in srgb, var(--accent) 40%, transparent)',
+        }"
       >
         <i :class="icon" :style="{ color: 'var(--accent)' }" />
       </span>
