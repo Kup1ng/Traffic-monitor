@@ -20,23 +20,34 @@
       <PeriodChart />
 
       <!-- Footer / interface details -->
-      <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-5 text-xs text-muted">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span v-if="iface">
-            <span class="text-ink tnum">{{ iface.name }}</span>
-            <template v-if="iface.mac"> · MAC {{ iface.mac }}</template>
-            <template v-if="iface.mtu"> · MTU {{ iface.mtu }}</template>
-            <template v-if="iface.speed_mbps > 0"> · {{ iface.speed_mbps }} Mbps link</template>
-          </span>
-          <span v-if="totals">Monitoring since <span class="text-ink">{{ formatDate(totals.install_unix) }}</span></span>
+      <footer
+        class="clay-inset flex flex-col items-center gap-3 px-5 py-4 text-center text-[11px] leading-relaxed text-muted sm:flex-row sm:items-center sm:justify-between sm:text-left sm:text-xs"
+      >
+        <div class="flex flex-col items-center gap-1.5 sm:items-start">
+          <div
+            v-if="iface"
+            class="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 sm:justify-start"
+          >
+            <span class="rounded-md bg-[var(--surface)] px-2 py-0.5 font-semibold text-ink tnum shadow-sm">
+              {{ iface.name }}
+            </span>
+            <span v-if="iface.mac" class="tnum">{{ iface.mac }}</span>
+            <span v-if="iface.mtu">MTU {{ iface.mtu }}</span>
+            <span v-if="iface.speed_mbps > 0">{{ iface.speed_mbps }} Mbps</span>
+          </div>
+          <div v-if="totals" class="inline-flex items-center gap-1">
+            <i class="pi pi-clock text-[10px] opacity-70" />
+            <span>Monitoring since <span class="text-ink">{{ formatDate(totals.install_unix) }}</span></span>
+          </div>
         </div>
+
         <div class="flex items-center gap-3">
-          <span>v{{ version }}</span>
+          <span class="tnum rounded-md bg-[var(--surface)] px-2 py-0.5 shadow-sm">{{ version }}</span>
           <a
             href="https://github.com/Kup1ng/Traffic-monitor"
             target="_blank"
             rel="noopener"
-            class="inline-flex items-center gap-1 hover:text-ink"
+            class="inline-flex items-center gap-1 transition-colors hover:text-ink"
           >
             <i class="pi pi-github" /> GitHub
           </a>
