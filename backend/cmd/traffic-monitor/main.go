@@ -99,21 +99,12 @@ func runServe(args []string) error {
 				fmt.Fprintf(os.Stderr, "read error: %v\n", err)
 				continue
 			}
-			dRX := delta(rx, lastRX)
-			dTX := delta(tx, lastTX)
+			dRX := collector.Delta(rx, lastRX)
+			dTX := collector.Delta(tx, lastTX)
 			lastRX, lastTX = rx, tx
 			fmt.Printf("\r↓ %-12s  ↑ %-12s", bitsPerSec(dRX, secs), bitsPerSec(dTX, secs))
 		}
 	}
-}
-
-// delta computes bytes transferred since the previous reading, treating a
-// counter that went backwards as a reset (return the new value).
-func delta(cur, prev uint64) uint64 {
-	if cur >= prev {
-		return cur - prev
-	}
-	return cur
 }
 
 func bitsPerSec(bytes uint64, secs float64) string {

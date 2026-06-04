@@ -14,6 +14,17 @@ type CounterReader interface {
 	Iface() string
 }
 
+// Delta returns the bytes transferred between two consecutive raw counter
+// readings. A counter that went backwards (cur < prev) means the counter was
+// reset (reboot or NIC reset), so the new value itself is the delta — this never
+// produces a negative result and never double-counts.
+func Delta(cur, prev uint64) uint64 {
+	if cur >= prev {
+		return cur - prev
+	}
+	return cur
+}
+
 // SysfsReader reads real interface counters from /sys on Linux.
 type SysfsReader struct {
 	iface string
