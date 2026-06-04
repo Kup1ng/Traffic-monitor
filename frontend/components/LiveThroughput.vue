@@ -43,39 +43,60 @@
 const { samples, current } = useLive()
 const { colors } = useChart()
 const { speedParts, formatSpeed } = useFormat()
+const { tz } = useDisplayTz()
 
 const rxParts = computed(() => speedParts(current.value.rx_bps))
 const txParts = computed(() => speedParts(current.value.tx_bps))
 
-function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+// The live window only spans a couple of minutes, so the hour and AM/PM made
+// labels wide enough to overlap. Show minute:second only (e.g. "51:20"), in the
+// user-selected display timezone. formatToParts guarantees the "MM:SS" shape
+// regardless of locale.
+const timeFmt = computed(
+  () =>
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz.value,
+      hourCycle: 'h23',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+)
+
+function fmtTime(ms: number, fmt: Intl.DateTimeFormat): string {
+  const parts = fmt.formatToParts(ms)
+  const mm = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  const ss = parts.find((p) => p.type === 'second')?.value ?? '00'
+  return `${mm}:${ss}`
 }
 
-const chartData = computed(() => ({
-  labels: samples.value.map((s) => fmtTime(s.ts)),
-  datasets: [
-    {
-      label: 'Download',
-      data: samples.value.map((s) => s.rx_bps),
-      borderColor: colors.rx,
-      backgroundColor: colors.rxFill,
-      fill: true,
-      tension: 0.35,
-      pointRadius: 0,
-      borderWidth: 2,
-    },
-    {
-      label: 'Upload',
-      data: samples.value.map((s) => s.tx_bps),
-      borderColor: colors.tx,
-      backgroundColor: colors.txFill,
-      fill: true,
-      tension: 0.35,
-      pointRadius: 0,
-      borderWidth: 2,
-    },
-  ],
-}))
+const chartData = computed(() => {
+  const fmt = timeFmt.value
+  return {
+    labels: samples.value.map((s) => fmtTime(s.ts, fmt)),
+    datasets: [
+      {
+        label: 'Download',
+        data: samples.value.map((s) => s.rx_bps),
+        borderColor: colors.rx,
+        backgroundColor: colors.rxFill,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: 'Upload',
+        data: samples.value.map((s) => s.tx_bps),
+        borderColor: colors.tx,
+        backgroundColor: colors.txFill,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+  }
+})
 
 const chartOptions = computed(() => {
   return {
@@ -103,7 +124,20 @@ const chartOptions = computed(() => {
         titleColor: colors.tooltipText,
         bodyColor: colors.tooltipText,
         padding: 10,
-        callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${formatSpeed(Number(ctx.parsed.y))}` },
+        callbacks: {
+          title: (items: any[]) => {
+            const s = samples.value[items[0]?.dataIndex]
+            if (!s) return ''
+            return new Date(s.ts).toLocaleTimeString('en-GB', {
+              timeZone: tz.value,
+              hourCycle: 'h23',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+          },
+          label: (ctx: any) => ` ${ctx.dataset.label}: ${formatSpeed(Number(ctx.parsed.y))}`,
+        },
       },
     },
   }

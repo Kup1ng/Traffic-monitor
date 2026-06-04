@@ -51,6 +51,7 @@ import type { Bucket } from '~/composables/useApi'
 const { getHistory } = useApi()
 const { colors } = useChart()
 const { formatBytes } = useFormat()
+const { tz } = useDisplayTz()
 
 const ranges = [
   { label: '5 min', value: '5min', count: 48 },
@@ -60,7 +61,6 @@ const ranges = [
 ]
 const range = ref('hour')
 const buckets = ref<Bucket[]>([])
-const serverTz = ref('') // server IANA zone; used so day/month labels match how buckets were grouped
 const loading = ref(true)
 
 const rangeHint = computed(
@@ -79,17 +79,18 @@ function countFor(r: string): number {
 
 function fmtLabel(ts: number, r: string): string {
   const d = new Date(ts * 1000)
-  // Format in the server's timezone (when configured) so day/month labels match
-  // the zone the buckets were grouped in; otherwise use the browser's zone.
-  const tz = serverTz.value || undefined
+  // Format in the user-selected display timezone so every chart and the footer
+  // share one clock. (Day/month buckets are grouped server-side by TM_TZ; for an
+  // exact match set TM_TZ to the same zone — see the README's known limitation.)
+  const zone = tz.value
   switch (r) {
     case '5min':
     case 'hour':
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz })
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: zone })
     case 'day':
-      return d.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: tz })
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: zone })
     case 'month':
-      return d.toLocaleDateString([], { month: 'short', year: '2-digit', timeZone: tz })
+      return d.toLocaleDateString([], { month: 'short', year: '2-digit', timeZone: zone })
   }
   return ''
 }
@@ -147,7 +148,6 @@ async function load() {
   try {
     const res = await getHistory(range.value, countFor(range.value))
     buckets.value = res.buckets || []
-    serverTz.value = res.tz || ''
   } catch {
     buckets.value = []
   } finally {

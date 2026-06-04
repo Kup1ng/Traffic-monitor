@@ -219,3 +219,28 @@ body {
 .p-selectbutton .p-togglebutton-content {
   background: transparent;
 }
+
+/* Footer timezone Select: a small carved-in clay field. */
+.tm-tz-select.p-select {
+  border: none;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  box-shadow: var(--clay-inset);
+  align-items: center;
+}
+.tm-tz-select .p-select-label {
+  padding: 0.25rem 0.1rem 0.25rem 0.55rem;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+  font-family: 'Fira Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.tm-tz-select .p-select-dropdown {
+  width: 1.5rem;
+  color: var(--text-muted);
+}
+.tm-tz-select.p-focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}

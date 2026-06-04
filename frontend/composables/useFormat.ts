@@ -1,6 +1,7 @@
 // Decimal (SI, powers of 1000) byte formatting and bits/s speed formatting.
 // Numbers are rendered with the .tnum class elsewhere for tabular figures.
 export function useFormat() {
+  const { tz } = useDisplayTz()
   const toNum = (v: number | string): number => (typeof v === 'string' ? Number(v) : v)
 
   function scale(n: number, units: string[]): { value: string; unit: string } {
@@ -58,7 +59,7 @@ export function useFormat() {
 
   function formatDate(unix: number): string {
     if (!unix) return '—'
-    return new Date(unix * 1000).toLocaleString()
+    return new Date(unix * 1000).toLocaleString([], { timeZone: tz.value })
   }
 
   return { bytesParts, formatBytes, speedParts, formatSpeed, formatSince, formatDate }

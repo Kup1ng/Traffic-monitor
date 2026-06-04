@@ -22,7 +22,8 @@ no CORS, no runtime dependencies.
 - **Professional dashboard.** Real-time throughput chart (Server-Sent Events), cumulative
   total cards, a live usage summary (today / 24h / month / all-time), and hourly/daily/monthly
   history bars. Soft claymorphism look, fully responsive (mobile to large
-  screens), keyboard-accessible.
+  screens), keyboard-accessible. A footer timezone selector controls how every
+  timestamp is displayed (defaults to `Asia/Tehran`).
 - **Tiny footprint.** Pure-Go, near-zero idle CPU/RAM, a single SQLite file (WAL, one tiny
   write per minute), and a ~16 MB static binary that opens fast.
 - **Secure by default.** Single admin, bcrypt password hash, HMAC-signed session cookie,
@@ -217,6 +218,10 @@ Day and month boundaries are accurate to the UTC hour. For timezones with a non-
 offset (e.g. India +5:30, Nepal +5:45), the single hour that straddles local midnight is
 attributed to one side, so the "today"/"this month" edge can be off by up to that fractional
 hour. Long-window totals are exact.
+
+The footer timezone selector only changes how times are *displayed*; day and month buckets are
+still grouped server-side by `TM_TZ`. For day/month labels that line up exactly with the
+buckets, set `TM_TZ` to the same zone you view in.
 
 ## Screenshots
 

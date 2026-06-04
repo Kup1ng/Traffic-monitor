@@ -41,7 +41,25 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 sm:justify-end">
+          <div class="inline-flex items-center gap-1.5" title="Display timezone">
+            <i class="pi pi-globe text-[11px] opacity-70" aria-hidden="true" />
+            <Select
+              :model-value="tz"
+              :options="zones"
+              option-label="label"
+              option-value="value"
+              filter
+              :filter-fields="['name']"
+              auto-filter-focus
+              reset-filter-on-hide
+              filter-placeholder="Search city or region…"
+              size="small"
+              class="tm-tz-select"
+              aria-label="Display timezone"
+              @update:model-value="setTz"
+            />
+          </div>
           <span class="tnum rounded-md bg-[var(--surface)] px-2 py-0.5 shadow-sm">{{ version }}</span>
           <a
             href="https://github.com/Kup1ng/Traffic-monitor"
@@ -62,6 +80,7 @@ import type { TotalsResp, SummaryResp, InterfaceResp } from '~/composables/useAp
 
 const { getTotals, getSummary, getInterface, request } = useApi()
 const { bytesParts, formatDate } = useFormat()
+const { tz, zones, setTz } = useDisplayTz()
 const auth = useAuth()
 const live = useLive()
 const { connected } = live
