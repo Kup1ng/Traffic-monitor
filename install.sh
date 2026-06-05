@@ -327,6 +327,22 @@ cmd_update() {
   systemctl stop "$SERVICE" 2>/dev/null || true
   info "Replacing binary (database, port, and secret path are left untouched)"
   install -m 0755 "$BIN_SRC" "$BIN_DST"
+
+  # Refresh the systemd unit and ifb setup so an update also picks up service-level
+  # changes — notably the CAP_NET_ADMIN and ifb module the bandwidth limit needs
+  # (a binary-only update from an older version would otherwise lack them).
+  local up_listen up_port
+  up_listen="$(get_config_value TM_LISTEN 2>/dev/null || true)"
+  up_port="${up_listen##*:}"
+  if [ -n "$up_port" ]; then
+    info "Refreshing systemd unit and ifb module setup"
+    write_unit "$up_port"
+    mkdir -p /etc/modules-load.d
+    echo "ifb" > /etc/modules-load.d/traffic-monitor.conf
+    modprobe ifb 2>/dev/null || true
+    systemctl daemon-reload
+  fi
+
   info "Starting service"
   systemctl start "$SERVICE"
 

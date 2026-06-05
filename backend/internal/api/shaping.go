@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/Kup1ng/Traffic-monitor/internal/shaper"
 )
@@ -64,7 +65,13 @@ func (s *Server) handleShapingSet(w http.ResponseWriter, r *http.Request) {
 		if err := s.shaper.Apply(ctx, req.Mbps); err != nil {
 			// Log the detailed tc/ip error server-side; don't leak it to the client.
 			log.Printf("shaper: applying %d Mbps failed: %v", req.Mbps, err)
-			writeErr(w, http.StatusInternalServerError, "failed to apply limit")
+			msg := "failed to apply limit"
+			// The usual cause is a service started without CAP_NET_ADMIN (e.g. a
+			// binary-only update that didn't refresh the unit). Give an actionable hint.
+			if strings.Contains(strings.ToLower(err.Error()), "not permitted") {
+				msg = "failed to apply limit: the service lacks CAP_NET_ADMIN — run 'install.sh update' (or install) to refresh the systemd unit"
+			}
+			writeErr(w, http.StatusInternalServerError, msg)
 			return
 		}
 	}
