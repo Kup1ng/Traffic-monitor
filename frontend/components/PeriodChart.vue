@@ -16,7 +16,7 @@
       />
     </div>
 
-    <div class="relative mt-4 h-72">
+    <div class="relative mt-4 h-44">
       <div
         v-if="loading"
         class="absolute inset-0 z-10 grid place-items-center rounded-2xl"
