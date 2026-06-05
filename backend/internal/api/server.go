@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/Kup1ng/Traffic-monitor/internal/auth"
 	"github.com/Kup1ng/Traffic-monitor/internal/config"
 	"github.com/Kup1ng/Traffic-monitor/internal/engine"
+	"github.com/Kup1ng/Traffic-monitor/internal/shaper"
 	"github.com/Kup1ng/Traffic-monitor/web"
 )
 
@@ -20,18 +22,24 @@ type Server struct {
 	cfg     *config.Config
 	eng     *engine.Engine
 	auth    *auth.Authenticator
+	shaper  *shaper.Manager
 	version string
 	files   map[string]web.File
+
+	// shapeMu serializes the apply-then-persist (and clear-then-persist) sequence
+	// in handleShapingSet so the kernel state and the stored value never diverge
+	// under concurrent requests.
+	shapeMu sync.Mutex
 }
 
 // NewServer constructs the API server and prepares the embedded static files
 // (with the base-path placeholder rewritten to the configured base path).
-func NewServer(cfg *config.Config, eng *engine.Engine, a *auth.Authenticator, version string) (*Server, error) {
+func NewServer(cfg *config.Config, eng *engine.Engine, a *auth.Authenticator, sh *shaper.Manager, version string) (*Server, error) {
 	files, err := web.BuildFS(cfg.BasePath)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, eng: eng, auth: a, version: version, files: files}, nil
+	return &Server{cfg: cfg, eng: eng, auth: a, shaper: sh, version: version, files: files}, nil
 }
 
 // Handler builds the routed, middleware-wrapped HTTP handler. Every route lives
@@ -55,6 +63,8 @@ func (s *Server) Handler() http.Handler {
 	protected.HandleFunc("GET "+base+"api/history", s.handleHistory)
 	protected.HandleFunc("GET "+base+"api/interface", s.handleInterface)
 	protected.HandleFunc("GET "+base+"api/summary", s.handleSummary)
+	protected.HandleFunc("GET "+base+"api/shaping", s.handleShapingGet)
+	protected.HandleFunc("POST "+base+"api/shaping", s.handleShapingSet)
 	mux.Handle(base+"api/", s.auth.RequireAuth(protected))
 
 	// The embedded SPA on every other path under the base.

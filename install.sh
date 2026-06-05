@@ -153,9 +153,11 @@ print_url() {
 }
 
 write_unit() {
-  local port="$1" caps=""
+  local port="$1" netbind=""
+  # Low ports also need CAP_NET_BIND_SERVICE; traffic shaping always needs
+  # CAP_NET_ADMIN (to run tc/ip on the monitored interface).
   if [ "$port" -lt 1024 ] 2>/dev/null; then
-    caps="AmbientCapabilities=CAP_NET_BIND_SERVICE"
+    netbind=" CAP_NET_BIND_SERVICE"
   fi
   cat > "$UNIT_FILE" <<EOF
 [Unit]
@@ -169,6 +171,9 @@ Type=simple
 User=${SVC_USER}
 Group=${SVC_USER}
 EnvironmentFile=${ENV_FILE}
+# Load the ifb module (used for ingress shaping) as root before privileges are
+# dropped; "-+" runs it privileged and tolerates a built-in/absent module.
+ExecStartPre=-+/sbin/modprobe ifb
 ExecStart=${BIN_DST} serve
 Restart=on-failure
 RestartSec=3
@@ -180,7 +185,9 @@ PrivateTmp=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 ReadWritePaths=${DATA_DIR}
-${caps}
+# CAP_NET_ADMIN: apply the bandwidth limit via tc/ip on the monitored interface.
+AmbientCapabilities=CAP_NET_ADMIN${netbind}
+CapabilityBoundingSet=CAP_NET_ADMIN${netbind}
 
 [Install]
 WantedBy=multi-user.target
@@ -262,6 +269,13 @@ cmd_install() {
   chown "$SVC_USER:$SVC_USER" "$DATA_DIR"
   chmod 750 "$DATA_DIR"
 
+  # The ingress half of the bandwidth limit redirects traffic to an ifb device,
+  # so the ifb kernel module must be available. Load it at every boot and now.
+  info "Enabling the ifb kernel module (for ingress shaping)"
+  mkdir -p /etc/modules-load.d
+  echo "ifb" > /etc/modules-load.d/traffic-monitor.conf
+  modprobe ifb 2>/dev/null || true
+
   info "Installing binary -> ${BIN_DST}"
   install -m 0755 "$BIN_SRC" "$BIN_DST"
 
@@ -299,6 +313,7 @@ EOF
   ok "Random port:     ${OPT_PORT}"
   ok "Secret web path: ${OPT_WEB_PATH}"
   print_url
+  ok "Set a hard bandwidth limit (Mbps) for ${OPT_IFACE} anytime from the dashboard footer."
   warn "The whole app lives ONLY under that secret path; the root URL returns 404."
   warn "There is no TLS — expose it only on a trusted/LAN/VPN network, or behind an HTTPS reverse proxy."
 }
@@ -325,10 +340,24 @@ cmd_uninstall() {
   require_root
   info "Stopping and disabling service"
   systemctl disable --now "$SERVICE" 2>/dev/null || true
+
+  # The service clears its own tc rules on a clean stop, but a crash/SIGKILL
+  # could leave them behind — and we're about to delete the binary that knows
+  # how to undo them. Tear any leftovers down explicitly (best-effort) using the
+  # interface from the config (still present at this point).
+  local un_iface
+  un_iface="$(get_config_value TM_INTERFACE 2>/dev/null || echo '')"
+  if [ -n "$un_iface" ]; then
+    tc qdisc del dev "$un_iface" root 2>/dev/null || true
+    tc qdisc del dev "$un_iface" ingress 2>/dev/null || true
+  fi
+  ip link del tm-ifb0 2>/dev/null || true
+
   rm -f "$UNIT_FILE"
+  rm -f /etc/modules-load.d/traffic-monitor.conf
   systemctl daemon-reload
   rm -f "$BIN_DST"
-  ok "Service, unit, and binary removed."
+  ok "Service, unit, and binary removed (interface returned to unshaped)."
 
   local ans
   read -r -p "Also delete the database and config (${DATA_DIR}, ${CONFIG_DIR})? [y/N]: " ans || true

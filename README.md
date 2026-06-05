@@ -24,6 +24,10 @@ no CORS, no runtime dependencies.
   history bars. Soft claymorphism look, fully responsive (mobile to large
   screens), keyboard-accessible. A footer timezone selector controls how every
   timestamp is displayed (defaults to `Asia/Tehran`).
+- **Bandwidth limit (traffic shaping).** Set a hard Mbps cap for the monitored interface right
+  from the dashboard footer. It's enforced in **both directions** via the Linux `tc` stack (HTB
+  on the interface for egress, an `ifb` redirect for ingress), applied live, persisted, and
+  re-applied automatically after a restart or reboot.
 - **Tiny footprint.** Pure-Go, near-zero idle CPU/RAM, a single SQLite file (WAL, one tiny
   write per minute), and a ~16 MB static binary that opens fast.
 - **Secure by default.** Single admin, bcrypt password hash, HMAC-signed session cookie,
@@ -215,6 +219,30 @@ numbers in **bits/second**.
 | `GET /api/history?range=5min\|hour\|day\|month&count=N` | time-bucketed history |
 | `GET /api/interface` | interface info + current speed |
 | `GET /api/summary` | today / last 24h / this month / all-time totals |
+| `GET /api/shaping` | current bandwidth cap `{ limit_mbps, active, supported }` |
+| `POST /api/shaping` | `{ "mbps": N }` applies the cap (`N <= 0` disables); returns the new state |
+
+## Bandwidth limit (traffic shaping)
+
+The dashboard footer shows the monitored interface as an editable **Mbps** field. Type a number
+to cap the interface's instantaneous throughput, or clear it (the ✕) to return to unshaped. A
+green dot shows when a limit is active. The cap is enforced in **both directions** with the
+Linux traffic-control stack:
+
+- **Egress (TX):** an HTB qdisc on the interface, one class with `rate = ceil = <limit>`.
+- **Ingress (RX):** incoming packets are redirected to a dedicated `ifb` device whose egress is
+  shaped at the same rate (ingress can't be shaped directly — only via an IFB).
+
+The limit is applied **live** (no restart), **persisted** in the database, and **re-applied on
+service start / after reboot** (tc rules aren't persistent on their own). Disabling it — or a
+clean service stop — tears the qdiscs down so the interface returns to normal; a failed apply
+rolls back, so the interface is never left half-configured.
+
+This needs `CAP_NET_ADMIN` and the `ifb` kernel module: `install.sh` grants the capability in
+the systemd unit and loads the module (at boot via `modules-load.d` and at start via
+`ExecStartPre`). In demo mode the control is simulated (no real `tc`). Verified end-to-end on a
+live kernel — a 20 Mbit cap measured 19.1 Mbit/s on both directions, and teardown restores line
+rate.
 
 ## Security notes
 
@@ -228,6 +256,10 @@ numbers in **bits/second**.
   to the secret base path.
 - 5-digit ports need no privileges; the systemd unit only grants `CAP_NET_BIND_SERVICE` if you
   override to a port below 1024.
+- The bandwidth limit runs `tc`/`ip` via `CAP_NET_ADMIN` (granted in the unit). It is set only
+  through the authenticated API under the secret path; the value is validated (1–1,000,000 Mbps)
+  and the interface name comes from config, never the request — so the feature adds no command
+  injection surface.
 - The admin password is stored as a bcrypt hash in the SQLite database; the session secret is
   generated on first run and persisted, so sessions survive restarts. `set-web-path` also
   rotates the session secret, immediately invalidating any outstanding tokens. The binary

@@ -4,11 +4,13 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"strconv"
 )
 
 const (
 	keyPasswordHash  = "password_hash"
 	keySessionSecret = "session_secret"
+	keyBWLimitMbps   = "bw_limit_mbps"
 )
 
 // GetSetting returns a setting value; the bool is false when the key is absent.
@@ -30,6 +32,28 @@ func (s *Store) SetSetting(key, value string) error {
 		`INSERT INTO settings(key, value) VALUES(?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
+}
+
+// GetBandwidthLimit returns the persisted bandwidth cap in Mbps (0 = disabled,
+// also returned when the value is unset or unparseable).
+func (s *Store) GetBandwidthLimit() (int, error) {
+	v, ok, err := s.GetSetting(keyBWLimitMbps)
+	if err != nil || !ok {
+		return 0, err
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, nil
+	}
+	return n, nil
+}
+
+// SetBandwidthLimit persists the desired bandwidth cap in Mbps (0 = disabled).
+func (s *Store) SetBandwidthLimit(mbps int) error {
+	if mbps < 0 {
+		mbps = 0
+	}
+	return s.SetSetting(keyBWLimitMbps, strconv.Itoa(mbps))
 }
 
 // GetPasswordHash returns the stored admin bcrypt hash (bool false if unset).

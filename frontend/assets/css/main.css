@@ -244,3 +244,54 @@ body {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
+
+/* Footer bandwidth-limit control: a small carved field + raised clay buttons. */
+.tm-bw-input {
+  width: 3.5rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  box-shadow: var(--clay-inset);
+  color: var(--text);
+  padding: 0.2rem 0.45rem;
+  font-size: 11px;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.tm-bw-input::-webkit-outer-spin-button,
+.tm-bw-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.tm-bw-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tm-bw-input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.tm-bw-btn {
+  display: inline-grid;
+  place-items: center;
+  height: 1.25rem;
+  width: 1.25rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: var(--clay-sm);
+  cursor: pointer;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+.tm-bw-btn:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+.tm-bw-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.tm-bw-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

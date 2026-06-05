@@ -30,6 +30,7 @@ import (
 	"github.com/Kup1ng/Traffic-monitor/internal/collector"
 	"github.com/Kup1ng/Traffic-monitor/internal/config"
 	"github.com/Kup1ng/Traffic-monitor/internal/engine"
+	"github.com/Kup1ng/Traffic-monitor/internal/shaper"
 	"github.com/Kup1ng/Traffic-monitor/internal/store"
 )
 
@@ -105,7 +106,23 @@ func runServe(args []string) error {
 	}
 	authn := auth.New(st, secret, cfg.SessionTTL, cfg.CookieSecure, cfg.BasePath, cfg.TrustProxy)
 
-	srv, err := api.NewServer(cfg, eng, authn, version)
+	// Bandwidth shaper for the monitored interface (real tc only on Linux, not in
+	// demo mode). Re-apply any persisted cap now so a limit survives restarts and
+	// reboots (tc rules are not persistent on their own).
+	shp := shaper.New(eng.Iface(), cfg.Demo, log.Default())
+	if shp.Supported() {
+		if limit, lerr := st.GetBandwidthLimit(); lerr != nil {
+			log.Printf("shaper: read persisted limit: %v", lerr)
+		} else if limit > 0 {
+			actx, acancel := shaper.BoundedContext()
+			if aerr := shp.Apply(actx, limit); aerr != nil {
+				log.Printf("shaper: re-applying persisted limit %d Mbps failed: %v", limit, aerr)
+			}
+			acancel()
+		}
+	}
+
+	srv, err := api.NewServer(cfg, eng, authn, shp, version)
 	if err != nil {
 		return err
 	}
@@ -128,11 +145,13 @@ func runServe(args []string) error {
 		// (e.g. the SSE stream) are cancelled promptly on shutdown.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
+	httpDone := make(chan struct{})
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutCtx)
+		close(httpDone)
 	}()
 
 	log.Printf("traffic-monitor %s listening on %s%s (interface %q, demo=%v)", version, cfg.Listen, cfg.BasePath, eng.Iface(), cfg.Demo)
@@ -149,6 +168,17 @@ func runServe(args []string) error {
 	// Restart=on-failure can act.
 	stop()
 	<-engDone // wait for the engine's final flush
+
+	// Tear down shaping on a clean shutdown so the interface returns to its normal
+	// unshaped state; the persisted limit stays and is re-applied on next start.
+	// Wait for HTTP to finish draining first so this can't race an in-flight
+	// shaping apply (which runs under its own context that shutdown won't cancel).
+	if shp.Supported() {
+		<-httpDone
+		tctx, tcancel := shaper.BoundedContext()
+		_ = shp.Clear(tctx)
+		tcancel()
+	}
 	return err
 }
 

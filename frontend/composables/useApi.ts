@@ -52,6 +52,12 @@ export interface Sample {
   tx_bps: number
 }
 
+export interface ShapingResp {
+  limit_mbps: number // desired cap in Mbps (0 = disabled)
+  active: boolean // qdiscs currently installed
+  supported: boolean // this host can shape (Linux + tc, non-demo)
+}
+
 // Base path the app is served under. Vite bakes import.meta.env.BASE_URL at
 // build time (a placeholder in production); the Go server rewrites it to the
 // secret base path at startup. Every API/SSE URL is built relative to it.
@@ -82,5 +88,9 @@ export function useApi() {
     getRecent: () => request<Sample[]>('/api/live/recent'),
     getHistory: (range: string, count?: number) =>
       request<HistoryResp>(`/api/history?range=${range}${count ? `&count=${count}` : ''}`),
+    getShaping: () => request<ShapingResp>('/api/shaping'),
+    // mbps <= 0 disables (removes) the limit.
+    setShaping: (mbps: number) =>
+      request<ShapingResp>('/api/shaping', { method: 'POST', body: { mbps } }),
   }
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/Kup1ng/Traffic-monitor/internal/collector"
 	"github.com/Kup1ng/Traffic-monitor/internal/config"
 	"github.com/Kup1ng/Traffic-monitor/internal/engine"
+	"github.com/Kup1ng/Traffic-monitor/internal/shaper"
 	"github.com/Kup1ng/Traffic-monitor/internal/store"
 )
 
@@ -34,7 +35,7 @@ func newTestHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	a := auth.New(st, secret, time.Hour, "false", "/", false)
-	srv, err := NewServer(cfg, eng, a, "test")
+	srv, err := NewServer(cfg, eng, a, shaper.New(eng.Iface(), cfg.Demo, nil), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +80,59 @@ func TestAPIAuthFlow(t *testing.T) {
 	}
 	if code, body := get("/api/session"); code != http.StatusOK || !strings.Contains(body, `"authenticated":true`) {
 		t.Fatalf("session = %d body=%s", code, body)
+	}
+}
+
+func TestShapingAPI(t *testing.T) {
+	ts := httptest.NewServer(newTestHandler(t))
+	defer ts.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	do := func(method, path, body string) (int, string) {
+		var r io.Reader
+		if body != "" {
+			r = strings.NewReader(body)
+		}
+		req, _ := http.NewRequest(method, ts.URL+path, r)
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+
+	if code := func() int { c, _ := do("POST", "/api/login", `{"password":"pw"}`); return c }(); code != http.StatusOK {
+		t.Fatalf("login = %d", code)
+	}
+
+	// Initial state: supported (demo mode simulates shaping) and disabled.
+	if code, body := do("GET", "/api/shaping", ""); code != http.StatusOK ||
+		!strings.Contains(body, `"limit_mbps":0`) || !strings.Contains(body, `"supported":true`) ||
+		!strings.Contains(body, `"active":false`) {
+		t.Fatalf("initial shaping = %d body=%s", code, body)
+	}
+	// Absurd values are rejected.
+	if code, _ := do("POST", "/api/shaping", `{"mbps":2000000}`); code != http.StatusBadRequest {
+		t.Fatalf("absurd mbps = %d, want 400", code)
+	}
+	// Setting a limit applies (simulated) and persists it.
+	if code, body := do("POST", "/api/shaping", `{"mbps":100}`); code != http.StatusOK ||
+		!strings.Contains(body, `"limit_mbps":100`) || !strings.Contains(body, `"active":true`) {
+		t.Fatalf("set 100 = %d body=%s", code, body)
+	}
+	if _, body := do("GET", "/api/shaping", ""); !strings.Contains(body, `"limit_mbps":100`) {
+		t.Fatalf("persisted limit not reflected on GET: %s", body)
+	}
+	// Disabling clears and deactivates the limit.
+	if code, body := do("POST", "/api/shaping", `{"mbps":0}`); code != http.StatusOK ||
+		!strings.Contains(body, `"limit_mbps":0`) || !strings.Contains(body, `"active":false`) {
+		t.Fatalf("disable = %d body=%s", code, body)
 	}
 }
 
@@ -139,7 +193,7 @@ func TestSecretBasePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := auth.New(st, secret, time.Hour, "false", base, false)
-	srv, err := NewServer(cfg, eng, a, "test")
+	srv, err := NewServer(cfg, eng, a, shaper.New(eng.Iface(), cfg.Demo, nil), "test")
 	if err != nil {
 		t.Fatal(err)
 	}

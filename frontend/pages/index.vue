@@ -33,7 +33,7 @@
             </span>
             <span v-if="iface.mac" class="tnum">{{ iface.mac }}</span>
             <span v-if="iface.mtu">MTU {{ iface.mtu }}</span>
-            <span v-if="iface.speed_mbps > 0">{{ iface.speed_mbps }} Mbps</span>
+            <BandwidthLimit :iface="iface" />
           </div>
           <div v-if="totals" class="inline-flex items-center gap-1">
             <i class="pi pi-clock text-[10px] opacity-70" />
